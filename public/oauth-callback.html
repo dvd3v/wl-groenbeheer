@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>OAuth Callback - WL Groenbeheer</title>
+  </head>
+  <body>
+    <script type="module">
+      import esriId from "https://js.arcgis.com/4.31/@arcgis/core/identity/IdentityManager.js";
+      esriId.setOAuthResponseHash(window.location.hash);
+      window.close();
+    </script>
+  </body>
+</html>
