@@ -1,6 +1,7 @@
 import WebMap from "@arcgis/core/WebMap.js";
 import Basemap from "@arcgis/core/Basemap.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
+import GroupLayer from "@arcgis/core/layers/GroupLayer.js";
 import WMSLayer from "@arcgis/core/layers/WMSLayer.js";
 import WMTSLayer from "@arcgis/core/layers/WMTSLayer.js";
 import FeatureTemplate from "@arcgis/core/layers/support/FeatureTemplate.js";
@@ -8,12 +9,31 @@ import FormTemplate from "@arcgis/core/form/FormTemplate.js";
 import FieldElement from "@arcgis/core/form/elements/FieldElement.js";
 import UniqueValueRenderer from "@arcgis/core/renderers/UniqueValueRenderer.js";
 import SimpleFillSymbol from "@arcgis/core/symbols/SimpleFillSymbol.js";
+import SimpleLineSymbol from "@arcgis/core/symbols/SimpleLineSymbol.js";
 import PortalItem from "@arcgis/core/portal/PortalItem.js";
 import Portal from "@arcgis/core/portal/Portal.js";
 import esriRequest from "@arcgis/core/request.js";
 
 const FEATURE_SERVICE_URL =
   "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/Jaarplan_Trajecten_2027/FeatureServer";
+const GISIB_BOR_MAPSERVER_URL =
+  "https://utility.arcgis.com/usrsvcs/servers/73fc6147aa1d457fa19f50598a9e1001/rest/services/Groenbeheer/GISIB_BOR/MapServer";
+const GISIB_BOR_LAYER_DEFINITIONS = [
+  { id: 7, title: "Waterobject" },
+  { id: 8, title: "Terreindeel" },
+  { id: 9, title: "Groenobject" },
+  { id: 10, title: "Verhardingsobject" },
+  { id: 11, title: "Grindkoffer" },
+  { id: 12, title: "Rooster" },
+  { id: 4, title: "Hek" },
+  { id: 5, title: "Faunavoorziening" },
+  { id: 6, title: "Slagboom" },
+  { id: 15, title: "Boom" },
+  { id: 1, title: "Solitaire plant" },
+  { id: 2, title: "Markeringspaal" },
+  { id: 3, title: "Faunaverblijfplaats" },
+] as const;
+const TRAJECT_LAYER_OPACITY = 1;
 
 const PORTAL_URL = "https://ws-limburg.maps.arcgis.com";
 const PDOK_LUCHTFOTO_WMS_URL = "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0";
@@ -54,17 +74,11 @@ export function getStatusColor(code: number | string): string {
 }
 
 function createStatusRenderer(statusField: string): UniqueValueRenderer {
-  const defaultSymbol = new SimpleFillSymbol({
-    color: [200, 200, 200, 0.6],
-    outline: { color: [110, 110, 110], width: 0.7 },
-  });
+  const defaultSymbol = createTrajectorySymbol([95, 108, 114], [200, 200, 200, 0.12]);
 
   const uniqueValueInfos = STATUS_DOMAIN.map((s) => ({
     value: s.code,
-    symbol: new SimpleFillSymbol({
-      color: [...hexToRgb(s.color), 0.6],
-      outline: { color: [...hexToRgb(s.color), 1], width: 1.2 },
-    }),
+    symbol: createTrajectorySymbol(hexToRgb(s.color), [...hexToRgb(s.color), 0.14]),
     label: s.label,
   }));
 
@@ -73,6 +87,22 @@ function createStatusRenderer(statusField: string): UniqueValueRenderer {
     defaultSymbol,
     defaultLabel: "Onbekend",
     uniqueValueInfos,
+  });
+}
+
+function createTrajectorySymbol(
+  outlineRgb: [number, number, number],
+  fillColor: [number, number, number, number]
+): SimpleFillSymbol {
+  return new SimpleFillSymbol({
+    color: fillColor,
+    outline: new SimpleLineSymbol({
+      color: [...outlineRgb, 1],
+      width: 3.2,
+      style: "dash",
+      cap: "round",
+      join: "round",
+    }),
   });
 }
 
@@ -129,6 +159,8 @@ export async function initMap(): Promise<MapContext> {
   const configuredLayer = new FeatureLayer({
     url: FEATURE_SERVICE_URL,
     title: "Maaitrajecten 2027",
+    opacity: TRAJECT_LAYER_OPACITY,
+    listMode: "show",
     outFields: ["*"],
     renderer: createStatusRenderer(statusField),
     popupEnabled: true,
@@ -166,6 +198,7 @@ export async function initMap(): Promise<MapContext> {
   // Try to load existing WebMap from portal, or create a new one
   const map = await getOrCreateWebMap();
   const layer = attachConfiguredLayer(map, configuredLayer);
+  attachReferenceLayers(map, layer);
   const basemapOptions = createBasemapOptions(map.basemap ?? createFallbackBasemap());
 
   return { map, layer, statusField, basemapOptions };
@@ -214,6 +247,67 @@ function attachConfiguredLayer(map: WebMap, configuredLayer: FeatureLayer): Feat
 
   map.add(configuredLayer);
   return configuredLayer;
+}
+
+function attachReferenceLayers(map: WebMap, trajectoryLayer: FeatureLayer): void {
+  const existingBorMapLayer = map.allLayers.find((layer: any) => {
+    if (layer?.title === "BOR objectlagen") return false;
+    return typeof layer?.url === "string" && layer.url === GISIB_BOR_MAPSERVER_URL;
+  }) as any | undefined;
+
+  if (existingBorMapLayer) {
+    existingBorMapLayer.listMode = "show";
+    existingBorMapLayer.opacity = 1;
+    map.reorder(existingBorMapLayer, Math.max(map.layers.indexOf(trajectoryLayer), 0));
+    trajectoryLayer.opacity = TRAJECT_LAYER_OPACITY;
+    map.reorder(trajectoryLayer, map.layers.length - 1);
+    return;
+  }
+
+  let groupLayer = map.allLayers.find(
+    (layer: any) => layer.type === "group" && layer.title === "BOR objectlagen"
+  ) as GroupLayer | undefined;
+
+  if (!groupLayer) {
+    groupLayer = new GroupLayer({
+      title: "BOR objectlagen",
+      visibilityMode: "independent",
+      listMode: "show",
+    });
+    map.add(groupLayer, Math.max(map.layers.indexOf(trajectoryLayer), 0));
+  }
+
+  GISIB_BOR_LAYER_DEFINITIONS.forEach(({ id, title }, offset) => {
+    const layerUrl = `${GISIB_BOR_MAPSERVER_URL}/${id}`;
+    const existingLayer = map.allLayers.find(
+      (layer: any) => layer.url === layerUrl
+    ) as FeatureLayer | undefined;
+
+    if (existingLayer) {
+      existingLayer.title = title;
+      existingLayer.opacity = 1;
+      existingLayer.listMode = "show";
+      if (existingLayer.parent !== groupLayer) {
+        groupLayer.add(existingLayer);
+      }
+      groupLayer.reorder(existingLayer, offset);
+      return;
+    }
+
+    const referenceLayer = new FeatureLayer({
+      url: layerUrl,
+      title,
+      listMode: "show",
+      outFields: ["*"],
+      popupEnabled: true,
+    });
+
+    groupLayer.add(referenceLayer, offset);
+  });
+
+  map.reorder(groupLayer, Math.max(map.layers.indexOf(trajectoryLayer), 0));
+  trajectoryLayer.opacity = TRAJECT_LAYER_OPACITY;
+  map.reorder(trajectoryLayer, map.layers.length - 1);
 }
 
 function createBasemapOptions(defaultBasemap: Basemap): BasemapOption[] {
@@ -276,6 +370,7 @@ function createBgtBasemap(): Basemap {
 
 function applyLayerConfiguration(targetLayer: FeatureLayer, sourceLayer: FeatureLayer): void {
   targetLayer.title = sourceLayer.title;
+  targetLayer.opacity = sourceLayer.opacity;
   targetLayer.outFields = sourceLayer.outFields;
   targetLayer.renderer = sourceLayer.renderer;
   targetLayer.popupEnabled = sourceLayer.popupEnabled;

@@ -1,26 +1,26 @@
 /* CSS imports are done via main.ts for Vite compatibility */
 
 :root {
-  --wl-teal: #0b8f8a;
-  --wl-teal-dark: #0a6e6c;
-  --wl-teal-soft: #dbf4f1;
-  --wl-ink: #142127;
-  --wl-bg: #eef3ee;
-  --wl-bg-accent: #dceae4;
-  --wl-card: rgba(255, 255, 255, 0.86);
+  --wl-teal: #127c72;
+  --wl-teal-dark: #0b5d56;
+  --wl-teal-soft: #dff5ee;
+  --wl-ink: #112027;
+  --wl-bg: #edf3f1;
+  --wl-bg-accent: #d9e7e2;
+  --wl-card: rgba(255, 255, 255, 0.9);
   --wl-card-strong: #ffffff;
-  --wl-border: rgba(20, 33, 39, 0.09);
-  --wl-border-strong: rgba(20, 33, 39, 0.14);
-  --wl-text: #32454f;
-  --wl-text-muted: #718792;
-  --wl-shadow-soft: 0 10px 24px rgba(33, 53, 61, 0.06);
-  --wl-shadow-panel: 0 8px 22px rgba(20, 33, 39, 0.07);
-  --wl-radius-lg: 22px;
-  --wl-radius-md: 16px;
-  --wl-radius-sm: 12px;
-  --sidebar-width: 298px;
-  --header-height: 62px;
-  --table-default-height: 272px;
+  --wl-border: rgba(17, 32, 39, 0.08);
+  --wl-border-strong: rgba(17, 32, 39, 0.14);
+  --wl-text: #31464c;
+  --wl-text-muted: #6c8187;
+  --wl-shadow-soft: 0 18px 45px rgba(20, 37, 43, 0.08);
+  --wl-shadow-panel: 0 16px 40px rgba(17, 32, 39, 0.1);
+  --wl-radius-lg: 24px;
+  --wl-radius-md: 18px;
+  --wl-radius-sm: 14px;
+  --sidebar-width: 312px;
+  --header-height: 72px;
+  --table-default-height: 288px;
 }
 
 * {
@@ -36,9 +36,9 @@ body {
   overflow: hidden;
   color: var(--wl-text);
   background:
-    radial-gradient(circle at top left, rgba(11, 143, 138, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(92, 142, 113, 0.1), transparent 24%),
-    linear-gradient(180deg, #f5f8f4 0%, var(--wl-bg) 52%, #e7efea 100%);
+    radial-gradient(circle at top left, rgba(18, 124, 114, 0.16), transparent 24%),
+    radial-gradient(circle at 85% 14%, rgba(110, 177, 148, 0.16), transparent 22%),
+    linear-gradient(180deg, #f8fbfa 0%, #edf4f1 46%, #e4eeea 100%);
 }
 
 body::before {
@@ -46,38 +46,36 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.24) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.22) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 85%);
-  opacity: 0.45;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.55), transparent 18%),
+    radial-gradient(circle at 80% 12%, rgba(255, 255, 255, 0.45), transparent 16%);
+  opacity: 0.75;
 }
 
 /* ========== HEADER ========== */
 .app-header {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 18px;
+  gap: 16px;
+  padding: 0 24px;
   height: var(--header-height);
-  background: rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(250, 253, 252, 0.75));
+  backdrop-filter: blur(22px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.72);
   z-index: 10;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+  box-shadow: 0 8px 32px rgba(17, 32, 39, 0.05);
 }
 
 .header-logo {
-  height: 32px;
+  height: 34px;
   width: auto;
-  filter: saturate(1.05);
+  filter: saturate(1.08) contrast(1.02);
 }
 
 .header-divider {
   width: 1px;
-  height: 30px;
-  background: linear-gradient(180deg, transparent, var(--wl-border-strong), transparent);
+  height: 36px;
+  background: linear-gradient(180deg, transparent, rgba(17, 32, 39, 0.12), transparent);
 }
 
 .header-title {
@@ -86,18 +84,18 @@ body::before {
 }
 
 .header-title h1 {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 750;
   color: var(--wl-ink);
   line-height: 1.2;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
 }
 
 .header-subtitle {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--wl-text-muted);
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -107,12 +105,13 @@ body::before {
 
 .app-status {
   font-size: 11px;
-  color: var(--wl-text-muted);
-  padding: 5px 10px;
+  color: var(--wl-teal-dark);
+  padding: 7px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(20, 33, 39, 0.08);
-  font-weight: 600;
+  background: rgba(18, 124, 114, 0.09);
+  border: 1px solid rgba(18, 124, 114, 0.14);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .app-status.error {
@@ -156,8 +155,8 @@ body::before {
 .app-layout {
   display: flex;
   height: calc(100vh - var(--header-height));
-  gap: 12px;
-  padding: 12px;
+  gap: 16px;
+  padding: 16px 18px 18px;
 }
 
 /* ========== SIDEBAR ========== */
@@ -165,18 +164,22 @@ body::before {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   background: var(--wl-card);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-radius: 0;
-  box-shadow: none;
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: var(--wl-radius-lg);
+  box-shadow: var(--wl-shadow-panel);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
 }
 
 .sidebar-section {
-  padding: 16px 16px 14px;
+  padding: 18px 18px 16px;
   border-bottom: 1px solid var(--wl-border);
+}
+
+.sidebar-section:first-child {
+  background: linear-gradient(180deg, rgba(18, 124, 114, 0.06), rgba(255, 255, 255, 0));
 }
 
 .sidebar-section h3 {
@@ -185,7 +188,7 @@ body::before {
   color: var(--wl-text-muted);
   margin-bottom: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
 }
 
 /* ========== STATISTICS ========== */
@@ -321,9 +324,10 @@ body::before {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 246, 243, 0.95));
-  border: 1px solid rgba(20, 33, 39, 0.06);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 247, 0.96));
+  border: 1px solid rgba(17, 32, 39, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 .summary-number {
@@ -365,9 +369,9 @@ body::before {
   position: relative;
   min-height: 200px;
   overflow: hidden;
-  border-radius: 0;
-  box-shadow: none;
-  border: 1px solid rgba(20, 33, 39, 0.08);
+  border-radius: 28px 28px 0 0;
+  box-shadow: var(--wl-shadow-panel);
+  border: 1px solid rgba(255, 255, 255, 0.78);
   border-bottom: 0;
 }
 
@@ -375,22 +379,22 @@ arcgis-map {
   width: 100%;
   height: 100%;
   --calcite-font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --calcite-color-brand: var(--wl-teal);
 }
 
 /* ========== TABLE PANEL ========== */
 .table-panel {
   height: var(--table-default-height);
-  border-top: 1px solid rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   transition: height 0.15s ease;
   overflow: hidden;
-  border-radius: 0;
-  box-shadow: none;
-  border: 1px solid rgba(20, 33, 39, 0.08);
-  border-top: 1px solid rgba(20, 33, 39, 0.08);
+  border-radius: 0 0 28px 28px;
+  box-shadow: var(--wl-shadow-panel);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-top: 1px solid rgba(17, 32, 39, 0.06);
 }
 
 .table-panel.collapsed {
@@ -409,21 +413,20 @@ arcgis-map {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 14px;
-  height: 38px;
-  min-height: 38px;
+  padding: 0 16px;
+  height: 44px;
+  min-height: 44px;
   cursor: ns-resize;
   user-select: none;
   border-bottom: 1px solid var(--wl-border);
-  background: linear-gradient(180deg, rgba(250, 252, 251, 0.98), rgba(243, 247, 245, 0.95));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 246, 0.94));
 }
 
 .table-panel-header h3 {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 750;
   color: var(--wl-ink);
-  text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
 }
 
 .table-count {
@@ -433,10 +436,10 @@ arcgis-map {
 }
 
 .resize-grip {
-  width: 26px;
+  width: 32px;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(90deg, rgba(11, 143, 138, 0.15), rgba(11, 143, 138, 0.45), rgba(11, 143, 138, 0.15));
+  background: linear-gradient(90deg, rgba(18, 124, 114, 0.16), rgba(18, 124, 114, 0.52), rgba(18, 124, 114, 0.16));
 }
 
 .table-toggle-btn {
@@ -472,6 +475,14 @@ arcgis-expand[expand-icon="pencil"] {
   --arcgis-expand-content-width: 340px;
 }
 
+arcgis-expand {
+  --calcite-color-brand: var(--wl-teal);
+}
+
+arcgis-expand::part(container) {
+  border-radius: 16px;
+}
+
 arcgis-editor {
   width: 340px;
   max-height: calc(100vh - var(--header-height) - 100px);
@@ -486,8 +497,8 @@ arcgis-editor {
   width: 340px;
   min-width: 48px;
   background: var(--wl-card);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.74);
   border-radius: var(--wl-radius-lg);
   box-shadow: var(--wl-shadow-panel);
   display: flex;
@@ -499,19 +510,19 @@ arcgis-editor {
 .assistant-panel.collapsed {
   width: 56px;
   min-width: 56px;
-  background: linear-gradient(180deg, rgba(250, 252, 251, 0.98), rgba(236, 244, 241, 0.98));
-  border-color: rgba(11, 143, 138, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(237, 246, 243, 0.98));
+  border-color: rgba(18, 124, 114, 0.12);
 }
 
 .assistant-panel-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
-  height: 40px;
-  min-height: 40px;
+  padding: 0 14px;
+  height: 46px;
+  min-height: 46px;
   border-bottom: 1px solid var(--wl-border);
-  background: linear-gradient(180deg, rgba(250, 252, 251, 0.98), rgba(242, 247, 244, 0.96));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 246, 0.95));
   color: var(--wl-teal-dark);
   cursor: pointer;
   user-select: none;
@@ -521,12 +532,13 @@ arcgis-editor {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background: rgba(11, 143, 138, 0.1);
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(18, 124, 114, 0.12), rgba(18, 124, 114, 0.06));
   color: var(--wl-teal-dark);
   flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .assistant-panel-icon {
@@ -534,8 +546,8 @@ arcgis-editor {
 }
 
 .assistant-panel-title {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 750;
   color: var(--wl-ink);
   white-space: nowrap;
   overflow: hidden;
@@ -573,11 +585,11 @@ arcgis-editor {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: none;
-  background: transparent;
-  border-radius: 4px;
+  background: rgba(17, 32, 39, 0.03);
+  border-radius: 8px;
   color: var(--wl-text-muted);
   cursor: pointer;
   transition: all 0.15s;
@@ -609,7 +621,7 @@ arcgis-editor {
 }
 
 .panel-toggle-btn:hover {
-  background: rgba(11, 143, 138, 0.08);
+  background: rgba(18, 124, 114, 0.1);
   color: var(--wl-ink);
 }
 
@@ -667,18 +679,18 @@ arcgis-feature-table {
 
 .basemap-switcher {
   position: absolute;
-  top: 16px;
-  right: 60px;
+  top: 18px;
+  right: 72px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px;
+  padding: 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(20, 33, 39, 0.08);
-  box-shadow: 0 8px 18px rgba(20, 33, 39, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 14px 28px rgba(17, 32, 39, 0.12);
 }
 
 .basemap-btn {
@@ -686,10 +698,10 @@ arcgis-feature-table {
   border-radius: 999px;
   background: transparent;
   color: var(--wl-text-muted);
-  padding: 8px 12px;
+  padding: 9px 14px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 750;
+  letter-spacing: 0;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -698,14 +710,14 @@ arcgis-feature-table {
 }
 
 .basemap-btn:hover {
-  background: rgba(11, 143, 138, 0.08);
+  background: rgba(18, 124, 114, 0.08);
   color: var(--wl-ink);
 }
 
 .basemap-btn.active {
-  background: linear-gradient(135deg, var(--wl-teal), #0fa39d);
+  background: linear-gradient(135deg, #153c41, var(--wl-teal));
   color: #ffffff;
-  box-shadow: 0 8px 14px rgba(11, 143, 138, 0.22);
+  box-shadow: 0 10px 18px rgba(18, 124, 114, 0.24);
 }
 
 .table-container arcgis-feature-table {
@@ -713,9 +725,25 @@ arcgis-feature-table {
 }
 
 /* ========== LEGEND & LAYER LIST ========== */
-.sidebar-widgets {
-  flex: 1;
-  overflow-y: auto;
+.map-panel {
+  width: 320px;
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  padding: 14px 16px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(17, 32, 39, 0.15);
+}
+
+.map-panel-title {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--wl-text-muted);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
 }
 
 arcgis-legend,
@@ -725,12 +753,12 @@ arcgis-layer-list {
   --calcite-color-brand: var(--wl-teal);
   --calcite-color-brand-hover: var(--wl-teal-dark);
   --calcite-color-foreground-1: transparent;
-  --calcite-color-foreground-2: rgba(11, 143, 138, 0.05);
+  --calcite-color-foreground-2: rgba(18, 124, 114, 0.05);
   --calcite-color-text-1: var(--wl-ink);
   --calcite-color-text-2: var(--wl-text);
   --calcite-color-text-3: var(--wl-text-muted);
-  --calcite-font-size: 0.74rem;
-  --calcite-font-size-sm: 0.68rem;
+  --calcite-font-size: 0.76rem;
+  --calcite-font-size-sm: 0.69rem;
 }
 
 /* ========== SCROLLBAR ========== */
@@ -763,12 +791,21 @@ arcgis-layer-list {
 }
 
 @media (max-width: 900px) {
+  .app-layout {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .sidebar,
+  .assistant-panel {
+    border-radius: 20px;
+  }
+
   .basemap-switcher {
     top: 14px;
     left: 14px;
     right: 14px;
-    width: calc(100% - 28px);
-    justify-content: center;
+    max-width: calc(100% - 88px);
     flex-wrap: wrap;
     border-radius: 18px;
   }

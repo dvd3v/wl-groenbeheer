@@ -13,7 +13,7 @@
       <div class="header-divider"></div>
       <div class="header-title">
         <h1>Groenbeheer</h1>
-        <span class="header-subtitle">Maaitrajecten 2027</span>
+        <span class="header-subtitle">Dashboard Maaitrajecten 2027</span>
       </div>
       <div class="spacer"></div>
       <span class="app-status" id="app-status">Laden...</span>
@@ -35,10 +35,6 @@
           <h3>Legenda</h3>
           <arcgis-legend reference-element="mainMap"></arcgis-legend>
         </div>
-        <div class="sidebar-section sidebar-widgets">
-          <h3>Lagen</h3>
-          <arcgis-layer-list reference-element="mainMap"></arcgis-layer-list>
-        </div>
       </aside>
 
       <!-- Center: map + table -->
@@ -47,6 +43,17 @@
           <div class="basemap-switcher" id="basemap-switcher" aria-label="Achtergrondkaart kiezen"></div>
           <arcgis-map id="mainMap">
             <arcgis-zoom position="top-left"></arcgis-zoom>
+            <arcgis-expand
+              position="top-right"
+              expand-icon="layers"
+              expand-tooltip="Kaartlagen"
+              collapse-tooltip="Kaartlagen sluiten"
+            >
+              <div class="map-panel map-panel-layers">
+                <div class="map-panel-title">Lagenbeheer</div>
+                <arcgis-layer-list reference-element="mainMap"></arcgis-layer-list>
+              </div>
+            </arcgis-expand>
             <arcgis-expand position="top-right" expand-icon="pencil" expand-tooltip="Editor" collapse-tooltip="Editor sluiten">
               <arcgis-editor></arcgis-editor>
             </arcgis-expand>

@@ -107,6 +107,10 @@ async function hasAssistantEmbeddings(map: any): Promise<boolean> {
   );
 }
 
+function hasAssistantLayerMismatchRisk(map: any): boolean {
+  return map?.allLayers?.some?.((layer: any) => layer?.title === "BOR objectlagen") ?? false;
+}
+
 async function bootstrap(): Promise<void> {
   const statusEl = document.getElementById("app-status");
 
@@ -170,6 +174,11 @@ async function bootstrap(): Promise<void> {
         editorEl.snappingOptions = { enabled: false };
       }
 
+      const layerListEl = document.querySelector("arcgis-layer-list") as any;
+      if (layerListEl) {
+        layerListEl.visibilityAppearance = "checkbox";
+      }
+
       // --- Configure Feature Table ---
       const tableEl = document.querySelector("arcgis-feature-table") as any;
       if (tableEl) {
@@ -192,8 +201,9 @@ async function bootstrap(): Promise<void> {
       const webMapId = getConfiguredWebMapId();
       const assistantReady =
         !!map.portalItem?.id && (await hasAssistantEmbeddings(map).catch(() => false));
+      const assistantLayerMismatchRisk = hasAssistantLayerMismatchRisk(map);
 
-      if (assistantReady) {
+      if (assistantReady && !assistantLayerMismatchRisk) {
         const assistantEl = renderAssistant();
         if (assistantEl) {
           assistantEl.suggestedPrompts = [
@@ -204,9 +214,11 @@ async function bootstrap(): Promise<void> {
           ];
         }
       } else {
-        const message = webMapId
-          ? "De geconfigureerde WebMap heeft nog geen AI embeddings-resource. Open de WebMap in ArcGIS Online/Map Viewer en doorloop daar de AI assistant embeddings-setup."
-          : "Stel een bestaande ArcGIS Online WebMap in via VITE_ARCGIS_WEBMAP_ID. De ingebouwde data exploration agent werkt alleen met een echte WebMap portal item plus embeddings-resource.";
+        const message = assistantLayerMismatchRisk
+          ? "De kaartlagen zijn gewijzigd sinds de AI embeddings zijn opgebouwd. Open de WebMap in ArcGIS Online/Map Viewer en genereer de embeddings opnieuw voor deze actuele laagconfiguratie."
+          : webMapId
+            ? "De geconfigureerde WebMap heeft nog geen AI embeddings-resource. Open de WebMap in ArcGIS Online/Map Viewer en doorloop daar de AI assistant embeddings-setup."
+            : "Stel een bestaande ArcGIS Online WebMap in via VITE_ARCGIS_WEBMAP_ID. De ingebouwde data exploration agent werkt alleen met een echte WebMap portal item plus embeddings-resource.";
         renderAssistantUnavailable(
           message
         );
