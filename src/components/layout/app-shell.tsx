@@ -6,8 +6,6 @@ const NAV_ITEMS = [
   { to: "/jaarplan", label: "Jaarplan" },
   { to: "/datamodel", label: "Datamodel" },
 ];
-
-
 export function AppShell() {
   return (
     <div className="flex h-screen flex-col">

@@ -1,105 +1,17 @@
 <!DOCTYPE html>
-<html lang="nl" class="calcite-mode-light">
+<html lang="nl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WL Groenbeheer - Maaitrajecten 2027</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%2300a7b5'/><text x='16' y='22' text-anchor='middle' font-size='18' fill='white'>W</text></svg>" />
+    <title>WL Groenbeheer</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2329b6c2'/><text x='16' y='22' text-anchor='middle' font-size='18' fill='white'>W</text></svg>"
+    />
   </head>
   <body>
-    <!-- Header -->
-    <header class="app-header">
-      <img src="/wl-logo.png" alt="Waterschap Limburg" class="header-logo" />
-      <div class="header-divider"></div>
-      <div class="header-title">
-        <h1>Groenbeheer</h1>
-        <span class="header-subtitle">Dashboard Maaitrajecten 2027</span>
-      </div>
-      <div class="spacer"></div>
-      <span class="app-status" id="app-status">Laden...</span>
-    </header>
-
-    <!-- Main layout -->
-    <div class="app-layout">
-      <!-- Left sidebar: stats + legend + layers -->
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-section">
-          <div id="stats-container">
-            <div class="stats-header">
-              <h3>Voortgang</h3>
-              <div class="stats-total">Laden...</div>
-            </div>
-          </div>
-        </div>
-        <div class="sidebar-section">
-          <h3>Legenda</h3>
-          <arcgis-legend reference-element="mainMap"></arcgis-legend>
-        </div>
-      </aside>
-
-      <!-- Center: map + table -->
-      <div class="main-content">
-        <div class="map-container">
-          <div class="basemap-switcher" id="basemap-switcher" aria-label="Achtergrondkaart kiezen"></div>
-          <arcgis-map id="mainMap">
-            <arcgis-zoom position="top-left"></arcgis-zoom>
-            <arcgis-expand
-              position="top-right"
-              expand-icon="layers"
-              expand-tooltip="Kaartlagen"
-              collapse-tooltip="Kaartlagen sluiten"
-            >
-              <div class="map-panel map-panel-layers">
-                <div class="map-panel-title">Lagenbeheer</div>
-                <arcgis-layer-list reference-element="mainMap"></arcgis-layer-list>
-              </div>
-            </arcgis-expand>
-            <arcgis-expand position="top-right" expand-icon="pencil" expand-tooltip="Editor" collapse-tooltip="Editor sluiten">
-              <arcgis-editor></arcgis-editor>
-            </arcgis-expand>
-          </arcgis-map>
-        </div>
-
-        <!-- Table panel -->
-        <div class="table-panel" id="table-panel">
-          <div class="table-panel-header" id="table-resize-handle">
-            <div class="resize-grip"></div>
-            <h3>Trajecten</h3>
-            <span class="table-count" id="table-count"></span>
-            <div class="spacer"></div>
-            <button class="table-toggle-btn" id="table-toggle" title="Tabel in/uitklappen">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M4 6l4 4 4-4H4z"/>
-              </svg>
-            </button>
-          </div>
-          <div class="table-container">
-            <arcgis-feature-table reference-element="mainMap"></arcgis-feature-table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right sidebar: AI Assistant (collapsible) -->
-      <aside class="assistant-panel" id="assistant-panel">
-        <div class="assistant-panel-header">
-          <div class="assistant-panel-badge">
-            <svg class="assistant-panel-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1H6a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1v4a4 4 0 0 0 8 0v-4h1a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3V5a3 3 0 0 0-3-3z"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/></svg>
-          </div>
-          <span class="assistant-panel-title">AI Assistent</span>
-          <span class="assistant-panel-mini-label">AI</span>
-          <div class="spacer"></div>
-          <button class="panel-toggle-btn" id="assistant-toggle" title="AI Assistent in/uitklappen">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M6 4l4 4-4 4V4z"/>
-            </svg>
-          </button>
-        </div>
-        <div class="assistant-panel-content" id="assistant-content">
-          <div class="assistant-loading">AI assistent wordt voorbereid...</div>
-        </div>
-      </aside>
-    </div>
-
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
