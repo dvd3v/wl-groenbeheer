@@ -1,0 +1,58 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color: #1a1d2a;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(41, 182, 194, 0.12), transparent 28%),
+      radial-gradient(circle at 100% 0%, rgba(124, 58, 237, 0.07), transparent 24%),
+      #f5f6f8;
+    font-family: "DM Sans", system-ui, sans-serif;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply m-0 bg-bg bg-page-glow text-text antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .app-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #c8cdd6 transparent;
+  }
+
+  .app-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .app-scrollbar::-webkit-scrollbar-thumb {
+    background: #c8cdd6;
+    border-radius: 999px;
+  }
+
+  .glass-panel {
+    @apply border border-white/60 bg-white/90 shadow-panel backdrop-blur;
+  }
+}
