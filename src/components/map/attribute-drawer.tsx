@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { PLANNING_STATUS_COLORS, getRegimeColorGroup } from "../../data/datamodel";
 import type {
   AttributeFormValues,
+  BorFeatureSelection,
   PlannedWorkItem,
   PlanningRegistrationStatus,
   StatusOption,
@@ -20,6 +21,7 @@ interface AttributeDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedTraject: TrajectRecord | null;
+  selectedBorFeature: BorFeatureSelection | null;
   defaultValues: AttributeFormValues;
   statusOptions: StatusOption[];
   planningItems: PlannedWorkItem[];
@@ -72,6 +74,7 @@ export function AttributeDrawer({
   open,
   onOpenChange,
   selectedTraject,
+  selectedBorFeature,
   defaultValues,
   statusOptions,
   planningItems,
@@ -93,8 +96,8 @@ export function AttributeDrawer({
   }, [defaultValues, form, selectedTraject]);
 
   useEffect(() => {
-    if (selectedTraject?.hoofdobjec && !form.getValues("hoofdobjec")) {
-      form.setValue("hoofdobjec", selectedTraject.hoofdobjec, { shouldDirty: false });
+    if (selectedTraject?.trajectCode && !form.getValues("trajectCode")) {
+      form.setValue("trajectCode", selectedTraject.trajectCode, { shouldDirty: false });
     }
   }, [form, selectedTraject]);
 
@@ -111,44 +114,77 @@ export function AttributeDrawer({
       open={open}
       onOpenChange={onOpenChange}
       title={
-        selectedTraject
-          ? selectedTraject.hoofdobjec || `Traject ${selectedTraject.objectId}`
+        selectedBorFeature
+          ? selectedBorFeature.displayTitle
+          : selectedTraject
+          ? selectedTraject.trajectCode || `Traject ${selectedTraject.objectId}`
           : "Nieuw traject"
       }
-      description={
-        selectedTraject
-          ? "Trajectgegevens zijn bewerkbaar in het eerste tabblad. De planning-tab volgt nu het nieuwe werkzaamhedenmodel."
-          : "Nieuwe polygon afgerond. Voeg eerst hoofdobject en status toe."
-      }
     >
-      <div className="border-b border-border px-5 py-3">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition ${
-              activeTab === "traject"
-                ? "bg-accentSoft text-accentStrong"
-                : "bg-surfaceAlt text-textMuted"
-            }`}
-            onClick={() => setActiveTab("traject")}
-          >
-            Traject
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition ${
-              activeTab === "planning"
-                ? "bg-violet/10 text-violet"
-                : "bg-surfaceAlt text-textMuted"
-            }`}
-            onClick={() => setActiveTab("planning")}
-            disabled={!selectedTraject}
-          >
-            Planning
-          </button>
-        </div>
-      </div>
+      {selectedBorFeature ? (
+        <div className="space-y-5 p-5">
+          <section className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-textMuted">
+              BOR object
+            </div>
+            <div className="rounded-card border border-border bg-surfaceAlt p-3 text-[11px] text-textDim">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                Laag
+              </div>
+              <div className="mt-1 text-text">{selectedBorFeature.layerTitle}</div>
+            </div>
+          </section>
 
+          <section className="space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-textMuted">
+              Attributen
+            </div>
+            <div className="grid gap-3 rounded-card border border-border bg-surfaceAlt p-3 text-[11px] text-textDim">
+              {selectedBorFeature.attributes.map((attribute) => (
+                <div key={`${selectedBorFeature.layerId}-${attribute.key}`}>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                    {attribute.label}
+                  </div>
+                  <div className="mt-1 break-words text-text">{attribute.value}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} type="button">
+              Sluiten
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="border-b border-border px-5 py-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition ${activeTab === "traject"
+                    ? "bg-accentSoft text-accentStrong"
+                    : "bg-surfaceAlt text-textMuted"
+                  }`}
+                onClick={() => setActiveTab("traject")}
+              >
+                Traject
+              </button>
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition ${activeTab === "planning"
+                    ? "bg-violet/10 text-violet"
+                    : "bg-surfaceAlt text-textMuted"
+                  }`}
+                onClick={() => setActiveTab("planning")}
+                disabled={!selectedTraject}
+              >
+                Planning
+              </button>
+            </div>
+          </div>
+      
       {activeTab === "traject" ? (
         <form
           className="space-y-6 p-5"
@@ -162,10 +198,10 @@ export function AttributeDrawer({
             </div>
 
             <label className="block space-y-1.5">
-              <span className="text-[11px] text-textDim">Hoofdobject</span>
+              <span className="text-[11px] text-textDim">Trajectcode</span>
               <Input
-                placeholder={selectedTraject?.hoofdobjec || "Vul hoofdobjec in"}
-                {...form.register("hoofdobjec", { required: true })}
+                placeholder={selectedTraject?.trajectCode || "Vul trajectcode in"}
+                {...form.register("trajectCode", { required: true })}
               />
             </label>
 
@@ -209,9 +245,29 @@ export function AttributeDrawer({
                 </div>
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
-                    Model type
+                    GUID
                   </div>
-                  <div className="mt-1 text-text">{selectedTraject.modelType || "—"}</div>
+                  <div className="mt-1 break-all font-mono text-text">{selectedTraject.guid || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                    Type codering
+                  </div>
+                  <div className="mt-1 text-text">{selectedTraject.typeCodering || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                    Object count
+                  </div>
+                  <div className="mt-1 text-text">
+                    {selectedTraject.objectCount?.toLocaleString("nl-NL") ?? "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                    Bronlagen
+                  </div>
+                  <div className="mt-1 break-words text-text">{selectedTraject.bronlagen || "—"}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -232,20 +288,6 @@ export function AttributeDrawer({
                   </div>
                 </div>
               </div>
-
-              <section className="rounded-card border border-border bg-surfaceAlt px-3 py-3 text-[11px] text-textDim">
-                <div className="font-semibold text-text">ArcGIS audit</div>
-                <div className="mt-2 space-y-1">
-                  <div>GlobalID: {selectedTraject.globalId}</div>
-                  <div>Editor: {selectedTraject.editor || "Onbekend"}</div>
-                  <div>
-                    Laatste wijziging:{" "}
-                    {selectedTraject.editDate
-                      ? new Date(selectedTraject.editDate).toLocaleString("nl-NL")
-                      : "Niet beschikbaar"}
-                  </div>
-                </div>
-              </section>
             </section>
           ) : null}
 
@@ -389,6 +431,8 @@ export function AttributeDrawer({
             ))
           )}
         </div>
+      )}
+        </>
       )}
     </Drawer>
   );

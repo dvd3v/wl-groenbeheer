@@ -174,10 +174,10 @@ function hash(input: string): number {
 }
 
 function deriveTrajectCode(traject: SpatialTrajectFeature): string {
-  return traject.hoofdobjec || `Traject ${traject.objectId}`;
+  return traject.trajectCode || `Traject ${traject.objectId}`;
 }
 
-function deriveDoel(werkzaamheid: string, modelType: string): string {
+function deriveDoel(werkzaamheid: string, typeCodering: string): string {
   const value = werkzaamheid.toLowerCase();
 
   if (value.includes("boom") || value.includes("knot") || value.includes("kandel")) {
@@ -214,16 +214,16 @@ function deriveDoel(werkzaamheid: string, modelType: string): string {
     return "Bodem";
   }
   if (value.includes("watergang")) {
-    return modelType.includes("Waterkering") ? "Talud" : "Bodem";
+    return typeCodering.includes("Waterkering") ? "Talud" : "Bodem";
   }
   if (value.includes("maaien")) {
-    return modelType.includes("Netwerk") ? "Wegberm" : "Talud";
+    return typeCodering.includes("Netwerk") ? "Wegberm" : "Talud";
   }
 
   return "";
 }
 
-function deriveZijde(werkzaamheid: string, modelType: string, regime: number): WorkSide {
+function deriveZijde(werkzaamheid: string, typeCodering: string, regime: number): WorkSide {
   const value = werkzaamheid.toLowerCase();
 
   if (
@@ -247,7 +247,7 @@ function deriveZijde(werkzaamheid: string, modelType: string, regime: number): W
   }
 
   if (value.includes("maaien")) {
-    if (modelType.includes("Waterkering")) {
+    if (typeCodering.includes("Waterkering")) {
       return regime % 2 === 0 ? "L" : "R";
     }
     return "Beide";
@@ -379,13 +379,13 @@ function buildSeedDefinitions(traject: SpatialTrajectFeature): SeededPlanningDef
       definition: {
         workId,
         trajectGlobalId: traject.globalId,
-        trajectLabel: traject.hoofdobjec || `Traject ${traject.objectId}`,
+        trajectLabel: traject.trajectCode || `Traject ${traject.objectId}`,
         trajectCode,
         regime: template.regime,
         werkzaamheid,
         toelichting: template.toelichting,
-        doel: deriveDoel(werkzaamheid, traject.modelType),
-        zijde: deriveZijde(werkzaamheid, traject.modelType, template.regime),
+        doel: deriveDoel(werkzaamheid, traject.typeCodering),
+        zijde: deriveZijde(werkzaamheid, traject.typeCodering, template.regime),
         bewerkingspercentage: deriveBewerkingspercentage(
           werkzaamheid,
           template.bewerkingspercentage
@@ -439,7 +439,7 @@ export class MockPlanningService {
     const definition: PlanningWorkDefinition = {
       workId,
       trajectGlobalId: traject.globalId,
-      trajectLabel: traject.hoofdobjec || `Traject ${traject.objectId}`,
+      trajectLabel: traject.trajectCode || `Traject ${traject.objectId}`,
       trajectCode: deriveTrajectCode(traject),
       regime: input.regime,
       werkzaamheid: input.werkzaamheid,
