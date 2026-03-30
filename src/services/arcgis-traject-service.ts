@@ -488,9 +488,9 @@ export class ArcgisTrajectService {
           ?.flatMap((legendElement) =>
             "infos" in legendElement && legendElement.infos
               ? legendElement.infos.map((info) => ({
-                  label: info.label || layerInfo.title || layerInfo.layer.title || "Legenda",
-                  color: extractColor(info.symbol),
-                }))
+                label: info.label || layerInfo.title || layerInfo.layer.title || "Legenda",
+                color: extractColor(info.symbol),
+              }))
               : []
           )
           .filter((entry) => entry.label) ?? [],

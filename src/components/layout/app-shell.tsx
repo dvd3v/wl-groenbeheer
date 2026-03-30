@@ -18,9 +18,6 @@ export function AppShell() {
               <div className="text-[13px] font-semibold text-text">
                 Groenbeheer Kaartlagen
               </div>
-              <div className="text-[10px] text-textMuted">
-                Headless ArcGIS werkapplicatie
-              </div>
             </div>
           </div>
 
@@ -44,7 +41,7 @@ export function AppShell() {
           </nav>
 
           <div className="hidden rounded-pill border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accentStrong md:block">
-            ArcGIS Online
+            WL ArcGIS Online
           </div>
         </div>
       </header>

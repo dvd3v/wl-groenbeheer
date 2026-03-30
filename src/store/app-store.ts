@@ -29,6 +29,7 @@ interface AppState {
   ) => void;
   upsertTraject: (traject: TrajectRecord) => void;
   setPlanningItems: (items: PlannedWorkItem[]) => void;
+  addPlanningItem: (item: PlannedWorkItem) => void;
   updatePlanningItem: (workId: string, partial: Partial<PlannedWorkItem>) => void;
   selectTraject: (globalId: string | null, source: MapSelectionSource) => void;
   setEditingMode: (mode: EditingMode) => void;
@@ -43,8 +44,8 @@ interface AppState {
 const DEFAULT_FILTERS: JaarplanFilters = {
   trajectStatus: "all",
   planningStatus: "all",
-  handeling: "all",
-  periode: "all",
+  werkzaamheid: "all",
+  werkperiode: "all",
   search: "",
 };
 
@@ -109,6 +110,10 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
   setPlanningItems: (planningItems) => set({ planningItems }),
+  addPlanningItem: (item) =>
+    set((state) => ({
+      planningItems: [...state.planningItems, item],
+    })),
   updatePlanningItem: (workId, partial) =>
     set((state) => ({
       planningItems: state.planningItems.map((item) =>

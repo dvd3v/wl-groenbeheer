@@ -230,8 +230,8 @@ export function MapPage() {
               storedTraject?.hoofdobjec ??
               String(
                 trajectHit.graphic.attributes.hoofdobjec ??
-                  trajectHit.graphic.attributes.hoofdobject ??
-                  ""
+                trajectHit.graphic.attributes.hoofdobject ??
+                ""
               ),
             status: storedTraject?.status ?? Number(trajectHit.graphic.attributes.Status ?? 1),
             opmerking:
@@ -514,7 +514,7 @@ export function MapPage() {
           <div className="glass-panel absolute left-3 top-3 z-20 rounded-card px-3 py-2 text-[12px] text-textDim">
             <div className="flex items-center gap-2">
               <LoaderCircle className="h-4 w-4 animate-spin" />
-              Headless kaart laden...
+              Kaart laden...
             </div>
           </div>
         )}

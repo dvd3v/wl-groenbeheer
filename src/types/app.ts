@@ -7,6 +7,7 @@ export type PlanningRegistrationStatus =
   | "in_uitvoering"
   | "uitgevoerd"
   | "afgekeurd";
+export type WorkSide = "L" | "R" | "Beide" | "N.v.t.";
 
 export interface StatusOption {
   value: number;
@@ -17,6 +18,27 @@ export interface StatusOption {
 export interface ModelTypeOption {
   value: string;
   label: string;
+}
+
+export interface WorkPeriodOption {
+  value: string;
+  shortLabel: string;
+  label: string;
+}
+
+export interface DescribedDomainOption {
+  value: string;
+  description: string;
+}
+
+export interface RegimeTemplateDefinition {
+  regime: number;
+  werkzaamheid: string;
+  toelichting: string;
+  bewerkingspercentage?: string;
+  afvoeren?: string;
+  werkperiodeCode?: string;
+  werkperiodeLabel?: string;
 }
 
 export interface SpatialTrajectFeature {
@@ -64,13 +86,16 @@ export interface PlanningWorkDefinition {
   workId: string;
   trajectGlobalId: string;
   trajectLabel: string;
-  handeling: string;
-  werkwijze: string;
+  trajectCode: string;
+  regime: number;
+  werkzaamheid: string;
+  toelichting: string;
   doel: string;
-  zijde: string;
-  periode: number;
-  percentage: number;
-  ruimen: string;
+  zijde: WorkSide;
+  bewerkingspercentage: string;
+  afvoeren: string;
+  werkperiodeCode: string;
+  werkperiodeLabel: string;
 }
 
 export interface PlanningRegistration {
@@ -82,6 +107,21 @@ export interface PlanningRegistration {
 }
 
 export interface PlannedWorkItem extends PlanningWorkDefinition, PlanningRegistration {}
+
+export interface PlanningWorkCreateInput {
+  regime: number;
+  werkzaamheid: string;
+  toelichting: string;
+  doel: string;
+  zijde: WorkSide;
+  bewerkingspercentage: string;
+  afvoeren: string;
+  werkperiodeCode: string;
+  status?: PlanningRegistrationStatus;
+  datumGepland?: string;
+  datumUitgevoerd?: string;
+  opmerking?: string;
+}
 
 export interface DatamodelFieldDefinition {
   name: string;
@@ -113,8 +153,8 @@ export interface MapViewState {
 export interface JaarplanFilters {
   trajectStatus: "all" | string;
   planningStatus: "all" | PlanningRegistrationStatus;
-  handeling: "all" | string;
-  periode: "all" | string;
+  werkzaamheid: "all" | string;
+  werkperiode: "all" | string;
   search: string;
 }
 

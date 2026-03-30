@@ -1,18 +1,20 @@
+import { ArrowLeft, ArrowLeftRight, ArrowRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Button } from "../ui/button";
-import { Drawer } from "../ui/drawer";
-import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
-import { Textarea } from "../ui/textarea";
-import { PLANNING_STATUS_COLORS } from "../../data/datamodel";
+import { PLANNING_STATUS_COLORS, getRegimeColorGroup } from "../../data/datamodel";
 import type {
   AttributeFormValues,
   PlannedWorkItem,
   PlanningRegistrationStatus,
   StatusOption,
   TrajectRecord,
+  WorkSide,
 } from "../../types/app";
+import { Button } from "../ui/button";
+import { Drawer } from "../ui/drawer";
+import { Input } from "../ui/input";
+import { NativeSelect } from "../ui/native-select";
+import { Textarea } from "../ui/textarea";
 
 interface AttributeDrawerProps {
   open: boolean;
@@ -27,6 +29,43 @@ interface AttributeDrawerProps {
     workId: string,
     updates: Partial<Pick<PlannedWorkItem, "status" | "datumGepland" | "datumUitgevoerd" | "opmerking">>
   ) => Promise<void>;
+}
+
+function SideBadge({ side }: { side: WorkSide }) {
+  const icon =
+    side === "L" ? (
+      <ArrowLeft className="h-3.5 w-3.5" />
+    ) : side === "R" ? (
+      <ArrowRight className="h-3.5 w-3.5" />
+    ) : side === "Beide" ? (
+      <ArrowLeftRight className="h-3.5 w-3.5" />
+    ) : (
+      <Minus className="h-3.5 w-3.5" />
+    );
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-pill border border-border bg-white px-2 py-1 text-[10px] font-semibold text-text">
+      {icon}
+      {side}
+    </span>
+  );
+}
+
+function RegimeBadge({ regime }: { regime: number }) {
+  const palette = getRegimeColorGroup(regime);
+
+  return (
+    <span
+      className="inline-flex rounded-pill border px-2.5 py-1 text-[10px] font-semibold"
+      style={{
+        backgroundColor: palette.background,
+        color: palette.foreground,
+        borderColor: palette.border,
+      }}
+    >
+      Regime {regime}
+    </span>
+  );
 }
 
 export function AttributeDrawer({
@@ -45,6 +84,7 @@ export function AttributeDrawer({
   const form = useForm<AttributeFormValues>({
     defaultValues,
   });
+
   useEffect(() => {
     form.reset(defaultValues);
     if (!selectedTraject) {
@@ -61,9 +101,7 @@ export function AttributeDrawer({
   const trajectPlanning = useMemo(
     () =>
       selectedTraject
-        ? planningItems.filter(
-            (item) => item.trajectGlobalId === selectedTraject.globalId
-          )
+        ? planningItems.filter((item) => item.trajectGlobalId === selectedTraject.globalId)
         : [],
     [planningItems, selectedTraject]
   );
@@ -79,7 +117,7 @@ export function AttributeDrawer({
       }
       description={
         selectedTraject
-          ? "Alleen hoofdobject en reviewstatus zijn wijzigbaar. Planning staat in een apart tabblad."
+          ? "Trajectgegevens zijn bewerkbaar in het eerste tabblad. De planning-tab volgt nu het nieuwe werkzaamhedenmodel."
           : "Nieuwe polygon afgerond. Voeg eerst hoofdobject en status toe."
       }
     >
@@ -234,16 +272,31 @@ export function AttributeDrawer({
             trajectPlanning.map((item) => (
               <div
                 key={item.workId}
-                className="rounded-card border border-border bg-surfaceAlt/80 p-4"
+                className="space-y-4 rounded-card border border-border bg-surfaceAlt/80 p-4"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[12px] font-semibold text-text">
-                      {item.handeling} - {item.doel}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <RegimeBadge regime={item.regime} />
+                      <span className="font-mono text-[11px] text-textMuted">
+                        {item.trajectCode}
+                      </span>
                     </div>
-                    <div className="mt-1 text-[11px] text-textDim">
-                      {item.werkwijze} · {item.zijde} · P{item.periode} · {item.percentage}%
-                      · Ruimen: {item.ruimen}
+                    <div className="text-[13px] font-semibold text-text">
+                      {item.werkzaamheid}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-textDim">
+                      <span>{item.doel || "Geen doel"}</span>
+                      <span>|</span>
+                      <SideBadge side={item.zijde} />
+                      <span>|</span>
+                      <span>{item.bewerkingspercentage}</span>
+                      <span>|</span>
+                      <span>{item.afvoeren}</span>
+                      <span>|</span>
+                      <span title={item.werkperiodeLabel}>
+                        Werkperiode {item.werkperiodeCode}
+                      </span>
                     </div>
                   </div>
                   <span
@@ -254,7 +307,14 @@ export function AttributeDrawer({
                   </span>
                 </div>
 
-                <div className="mt-4 grid gap-3">
+                <div className="rounded-card border border-border bg-white p-4 text-[12px] leading-6 text-textDim">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-textMuted">
+                    Toelichting
+                  </div>
+                  <p className="mt-2 whitespace-pre-line">{item.toelichting}</p>
+                </div>
+
+                <div className="grid gap-3">
                   <label className="space-y-1.5">
                     <span className="text-[11px] text-textDim">Planning status</span>
                     <NativeSelect
@@ -323,7 +383,7 @@ export function AttributeDrawer({
                 </div>
 
                 {busyWorkId === item.workId ? (
-                  <div className="mt-3 text-[11px] text-textMuted">Planning opslaan...</div>
+                  <div className="text-[11px] text-textMuted">Planning opslaan...</div>
                 ) : null}
               </div>
             ))

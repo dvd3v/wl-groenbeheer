@@ -43,7 +43,6 @@ export function MapSidebar({
           <AccordionSection
             value="layers"
             title="Kaartlagen"
-            subtitle="Headless layer list via LayerListViewModel"
           >
             <div className="space-y-1">
               {layers.map((layer) => (
@@ -72,7 +71,6 @@ export function MapSidebar({
           <AccordionSection
             value="legend"
             title="Legenda"
-            subtitle="ArcGIS symbologie vertaald naar een custom React-paneel"
           >
             <div className="space-y-4">
               <div>

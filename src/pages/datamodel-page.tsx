@@ -1,6 +1,11 @@
 import { Database, GitBranchPlus, Link2 } from "lucide-react";
 import { Accordion, AccordionSection } from "../components/ui/accordion";
-import { DATAMODEL_SECTIONS } from "../data/datamodel";
+import {
+  DATAMODEL_SECTIONS,
+  REGIME_TEMPLATE_LIBRARY,
+  SPATIAL_CONTEXT_OPTIONS,
+  WERKZAAMHEDEN_SCHEMA,
+} from "../data/datamodel";
 import { cn } from "../lib/cn";
 
 const toneClasses = {
@@ -78,6 +83,155 @@ export function DatamodelPage() {
               De datamodelpagina maakt expliciet welke velden live zijn en welke
               velden voorlopig alleen als browser-persistente planningsdata bestaan.
             </p>
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-card p-6">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-violet">
+            Datamodeldomeinen
+          </div>
+          <h2 className="mt-2 text-xl font-bold text-text">
+            Volledige regimes, contexten en domeinlijsten
+          </h2>
+          <p className="mt-2 max-w-4xl text-[13px] leading-6 text-textDim">
+            Hieronder staan alle regimes, werkzaamheden, ruimtelijke contexten,
+            afvoeropties, bewerkingspercentages en werkperiodes die nu in het mock
+            jaarplan worden gebruikt.
+          </p>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div className="glass-panel rounded-card p-5">
+            <div className="text-[12px] font-semibold text-text">Ruimtelijke contexten</div>
+            <div className="mt-4 grid gap-3">
+              {SPATIAL_CONTEXT_OPTIONS.map((option) => (
+                <div
+                  key={option.value}
+                  className="rounded-card border border-border bg-surfaceAlt/70 p-4"
+                >
+                  <div className="text-[12px] font-semibold text-text">{option.value}</div>
+                  <p className="mt-1 text-[12px] leading-6 text-textDim">
+                    {option.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass-panel rounded-card p-5">
+            <div className="text-[12px] font-semibold text-text">Overige domeinlijsten</div>
+            <div className="mt-4 space-y-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Zijde
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {WERKZAAMHEDEN_SCHEMA.zijde.map((value) => (
+                    <span
+                      key={value}
+                      className="rounded-pill border border-border bg-white px-2 py-1 text-[10px] text-textDim"
+                    >
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Bewerkingspercentage
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {WERKZAAMHEDEN_SCHEMA.bewerkingspercentage.map((value) => (
+                    <span
+                      key={value}
+                      className="rounded-pill border border-border bg-white px-2 py-1 text-[10px] text-textDim"
+                    >
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Afvoeren
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {WERKZAAMHEDEN_SCHEMA.afvoeren.map((value) => (
+                    <span
+                      key={value}
+                      className="rounded-pill border border-border bg-white px-2 py-1 text-[10px] text-textDim"
+                    >
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Werkperiodes
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {WERKZAAMHEDEN_SCHEMA.werkperiode.map((value) => (
+                    <span
+                      key={value}
+                      className="rounded-pill border border-border bg-white px-2 py-1 text-[10px] text-textDim"
+                    >
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-card border border-border bg-white shadow-panel">
+          <div className="border-b border-border bg-surface px-5 py-4">
+            <div className="text-[12px] font-semibold text-text">
+              Regimes en werkzaamheden
+            </div>
+            <div className="mt-1 text-[12px] text-textDim">
+              Volledige regimecatalogus uit het mock datamodel.
+            </div>
+          </div>
+          <div className="app-scrollbar overflow-auto">
+            <table className="min-w-full border-collapse text-[12px]">
+              <thead className="bg-surfaceAlt">
+                <tr>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">Regime</th>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">Werkzaamheid</th>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">Toelichting</th>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">
+                    Bewerkingspercentage
+                  </th>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">Afvoeren</th>
+                  <th className="px-3 py-3 text-left font-semibold text-textDim">Werkperiode</th>
+                </tr>
+              </thead>
+              <tbody>
+                {REGIME_TEMPLATE_LIBRARY.map((item) => (
+                  <tr key={item.regime} className="border-t border-border/70 align-top">
+                    <td className="px-3 py-3 font-mono text-text">{item.regime}</td>
+                    <td className="px-3 py-3 font-medium text-text">{item.werkzaamheid}</td>
+                    <td className="px-3 py-3 text-textDim">{item.toelichting}</td>
+                    <td className="px-3 py-3 text-textDim">
+                      {item.bewerkingspercentage || "N.v.t."}
+                    </td>
+                    <td className="px-3 py-3 text-textDim">
+                      {item.afvoeren || "N.v.t."}
+                    </td>
+                    <td className="px-3 py-3 text-textDim">
+                      {item.werkperiodeCode && item.werkperiodeLabel
+                        ? `${item.werkperiodeCode}: ${item.werkperiodeLabel}`
+                        : "N.v.t."}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
