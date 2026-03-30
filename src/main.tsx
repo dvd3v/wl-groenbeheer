@@ -8,7 +8,7 @@ import "@arcgis/ai-components/components/arcgis-assistant-navigation-agent";
 import "@arcgis/ai-components/components/arcgis-assistant-help-agent";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { HashRouter } from "react-router-dom";
 import { AppRouter } from "./router";
 import "./styles.css";
 
@@ -20,8 +20,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <BrowserRouter>
+    <HashRouter>
       <AppRouter />
-    </BrowserRouter>
+    </HashRouter>
   </StrictMode>
 );
