@@ -23,12 +23,13 @@ import type {
   ModelTypeOption,
   SpatialTrajectFeature,
   StatusOption,
+  TrajectRendererMode,
 } from "../types/app";
 import { FALLBACK_MODEL_TYPES, STATUS_OPTIONS } from "../data/datamodel";
 
 const FEATURE_LAYER_URL =
   import.meta.env.VITE_FEATURE_LAYER_URL?.trim() ||
-  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/Jaarplan_Trajecten_2027/FeatureServer/0";
+  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/Jaarplan_Trajecten/FeatureServer/0";
 
 const GISIB_BOR_MAPSERVER_URL =
   "https://utility.arcgis.com/usrsvcs/servers/73fc6147aa1d457fa19f50598a9e1001/rest/services/Groenbeheer/GISIB_BOR/MapServer";
@@ -49,6 +50,20 @@ const GISIB_BOR_LAYER_DEFINITIONS = [
   { id: 2, title: "Markeringspaal" },
   { id: 3, title: "Faunaverblijfplaats" },
 ] as const;
+
+const TYPE_CODERING_OPTIONS: ModelTypeOption[] = [
+  { value: "WSL", label: "WSL" },
+  { value: "watergang-segment", label: "watergang-segment" },
+  { value: "waterkering", label: "waterkering" },
+  { value: "onbekend", label: "onbekend" },
+];
+
+const TYPE_CODERING_COLORS: Record<string, string> = {
+  WSL: "#0f766e",
+  "watergang-segment": "#2563eb",
+  waterkering: "#ca8a04",
+  onbekend: "#dc2626",
+};
 
 export interface BasemapOption {
   id: string;
@@ -139,7 +154,7 @@ function hexToRgb(hex: string): [number, number, number] {
 
 function createStatusRenderer(): UniqueValueRenderer {
   return new UniqueValueRenderer({
-    field: "Status",
+    field: "status",
     defaultSymbol: new SimpleFillSymbol({
       color: [200, 205, 214, 0.12],
       outline: new SimpleLineSymbol({
@@ -159,6 +174,35 @@ function createStatusRenderer(): UniqueValueRenderer {
             color: [r, g, b, 1],
             width: option.value === 2 ? 3 : 2.4,
             style: option.value === 2 ? "solid" : "short-dot",
+          }),
+        }),
+      };
+    }),
+  });
+}
+
+function createTypeCoderingRenderer(options: ModelTypeOption[]): UniqueValueRenderer {
+  return new UniqueValueRenderer({
+    field: "type_codering",
+    defaultSymbol: new SimpleFillSymbol({
+      color: [200, 205, 214, 0.12],
+      outline: new SimpleLineSymbol({
+        color: [146, 152, 173, 1],
+        width: 2,
+        style: "short-dot",
+      }),
+    }),
+    uniqueValueInfos: options.map((option) => {
+      const [r, g, b] = hexToRgb(TYPE_CODERING_COLORS[option.value] ?? "#9298ad");
+      return {
+        value: option.value,
+        label: option.label,
+        symbol: new SimpleFillSymbol({
+          color: [r, g, b, 0.12],
+          outline: new SimpleLineSymbol({
+            color: [r, g, b, 1],
+            width: 2.4,
+            style: "solid",
           }),
         }),
       };
@@ -186,15 +230,21 @@ function extractColor(symbol: Graphic["symbol"] | null | undefined): string | nu
 }
 
 function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
+  const guid = String(graphic.attributes.guid ?? "");
+
   return {
     objectId: Number(graphic.attributes.OBJECTID),
-    globalId: String(graphic.attributes.GlobalID),
-    hoofdobjec: String(
-      graphic.attributes.hoofdobjec ?? graphic.attributes.hoofdobject ?? ""
-    ),
-    modelType: String(graphic.attributes.model_type ?? ""),
-    status: Number(graphic.attributes.Status ?? 1),
-    opmerking: String(graphic.attributes.Opmerking ?? ""),
+    globalId: guid,
+    guid,
+    trajectCode: String(graphic.attributes.traject_code ?? ""),
+    typeCodering: String(graphic.attributes.type_codering ?? ""),
+    objectCount:
+      typeof graphic.attributes.object_count === "number"
+        ? graphic.attributes.object_count
+        : null,
+    bronlagen: String(graphic.attributes.bronlagen ?? ""),
+    status: Number(graphic.attributes.status ?? 1),
+    opmerking: String(graphic.attributes.opmerking ?? ""),
     shapeArea:
       typeof graphic.attributes.Shape__Area === "number"
         ? graphic.attributes.Shape__Area
@@ -202,16 +252,6 @@ function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
     shapeLength:
       typeof graphic.attributes.Shape__Length === "number"
         ? graphic.attributes.Shape__Length
-        : null,
-    creator: String(graphic.attributes.Creator ?? ""),
-    creationDate:
-      typeof graphic.attributes.CreationDate === "number"
-        ? graphic.attributes.CreationDate
-        : null,
-    editor: String(graphic.attributes.Editor ?? ""),
-    editDate:
-      typeof graphic.attributes.EditDate === "number"
-        ? graphic.attributes.EditDate
         : null,
     geometry: graphic.geometry ?? null,
   };
@@ -222,7 +262,7 @@ export class ArcgisTrajectService {
     const layer = new FeatureLayer({
       url: FEATURE_LAYER_URL,
       outFields: ["*"],
-      title: "Jaarplan Trajecten 2027",
+      title: "Jaarplan Trajecten",
       renderer: createStatusRenderer(),
     });
 
@@ -230,9 +270,25 @@ export class ArcgisTrajectService {
     return layer;
   }
 
+  async setTrajectRenderer(
+    layer: FeatureLayer,
+    mode: TrajectRendererMode,
+    modelTypeOptions?: ModelTypeOption[]
+  ): Promise<void> {
+    if (mode === "status") {
+      layer.renderer = createStatusRenderer();
+      layer.refresh();
+      return;
+    }
+
+    const options = modelTypeOptions?.length ? modelTypeOptions : await this.getModelTypeOptions(layer);
+    layer.renderer = createTypeCoderingRenderer(options);
+    layer.refresh();
+  }
+
   async getStatusOptions(layer?: FeatureLayer): Promise<StatusOption[]> {
     const candidateLayer = layer ?? (await this.createTrajectLayer());
-    const statusField = candidateLayer.fields.find((field) => field.name === "Status");
+    const statusField = candidateLayer.fields.find((field) => field.name === "status");
     const codedValues = statusField?.domain?.type === "coded-value"
       ? statusField.domain.codedValues
       : "codedValues" in (statusField?.domain ?? {})
@@ -252,15 +308,31 @@ export class ArcgisTrajectService {
 
   async getModelTypeOptions(layer?: FeatureLayer): Promise<ModelTypeOption[]> {
     const candidateLayer = layer ?? (await this.createTrajectLayer());
-    const typeOptions = candidateLayer.types
-      ?.map((typeInfo) => {
-        const value = String(typeInfo.id ?? "").trim();
-        const label = String(typeInfo.name ?? value).trim();
-        return value ? { value, label } : null;
-      })
-      .filter(Boolean) as ModelTypeOption[] | undefined;
+    const existingValues = new Set(
+      TYPE_CODERING_OPTIONS.map((option) => option.value.toLowerCase())
+    );
+    const typeField = candidateLayer.fields.find((field) => field.name === "type_codering");
+    const codedValues =
+      typeField?.domain?.type === "coded-value"
+        ? typeField.domain.codedValues
+        : "codedValues" in (typeField?.domain ?? {})
+          ? (typeField?.domain as { codedValues?: Array<{ code: string; name: string }> })
+              .codedValues
+          : undefined;
 
-    return typeOptions?.length ? typeOptions : FALLBACK_MODEL_TYPES;
+    if (!codedValues?.length) {
+      return TYPE_CODERING_OPTIONS;
+    }
+
+    return [
+      ...TYPE_CODERING_OPTIONS,
+      ...codedValues
+        .map((codedValue) => ({
+          value: String(codedValue.code),
+          label: codedValue.name,
+        }))
+        .filter((option) => !existingValues.has(option.value.toLowerCase())),
+    ];
   }
 
   async queryAllTrajecten(layer?: FeatureLayer): Promise<SpatialTrajectFeature[]> {
@@ -290,7 +362,7 @@ export class ArcgisTrajectService {
     return results
       .flatMap((result) => result.features)
       .map((feature) => toSpatialFeature(feature))
-      .sort((left, right) => left.hoofdobjec.localeCompare(right.hoofdobjec, "nl"));
+      .sort((left, right) => left.trajectCode.localeCompare(right.trajectCode, "nl"));
   }
 
   async createHeadlessMap(container: HTMLDivElement): Promise<HeadlessMapContext> {
@@ -375,7 +447,7 @@ export class ArcgisTrajectService {
     globalId: string
   ): Promise<Graphic | null> {
     const featureSet = await layer.queryFeatures({
-      where: `GlobalID='${globalId.replace(/'/g, "''")}'`,
+      where: `guid='${globalId.replace(/'/g, "''")}'`,
       outFields: ["*"],
       returnGeometry: true,
     });
@@ -392,10 +464,10 @@ export class ArcgisTrajectService {
     const graphic = new Graphic({
       geometry,
       attributes: {
-        hoofdobjec: values.hoofdobjec,
-        model_type: layer.types?.[0]?.id ?? FALLBACK_MODEL_TYPES[0].value,
-        Status: normalizedStatus,
-        Opmerking: values.opmerking,
+        traject_code: values.trajectCode,
+        type_codering: layer.types?.[0]?.id ?? FALLBACK_MODEL_TYPES[0].value,
+        status: normalizedStatus,
+        opmerking: values.opmerking,
       },
     });
 
@@ -439,9 +511,9 @@ export class ArcgisTrajectService {
       geometry,
       attributes: {
         OBJECTID: feature.objectId,
-        hoofdobjec: values.hoofdobjec,
-        Status: normalizedStatus,
-        Opmerking: values.opmerking,
+        traject_code: values.trajectCode,
+        status: normalizedStatus,
+        opmerking: values.opmerking,
       },
     });
 
@@ -479,22 +551,54 @@ export class ArcgisTrajectService {
       }));
   }
 
-  extractLegendItems(legendViewModel: LegendViewModel): LegendItem[] {
-    return legendViewModel.activeLayerInfos.toArray().map((layerInfo) => ({
-      id: layerInfo.layer.uid,
-      title: layerInfo.title ?? layerInfo.layer.title ?? "Laag",
+  extractLegendItems(
+    legendViewModel: LegendViewModel,
+    options?: {
+      rendererMode?: TrajectRendererMode;
+      trajectLayerId?: string;
+      statusOptions?: StatusOption[];
+      modelTypeOptions?: ModelTypeOption[];
+    }
+  ): LegendItem[] {
+    const sections = legendViewModel.activeLayerInfos
+      .toArray()
+      .map((layerInfo) => ({
+        id: layerInfo.layer.uid,
+        title: layerInfo.title ?? layerInfo.layer.title ?? "Laag",
+        entries:
+          layerInfo.legendElements
+            ?.flatMap((legendElement) =>
+              "infos" in legendElement && legendElement.infos
+                ? legendElement.infos.map((info) => ({
+                  label: info.label || layerInfo.title || layerInfo.layer.title || "Legenda",
+                  color: extractColor(info.symbol),
+                }))
+                : []
+            )
+            .filter((entry) => entry.label) ?? [],
+      }));
+
+    if (!options?.trajectLayerId || !options.rendererMode) {
+      return sections;
+    }
+
+    const nonTrajectSections = sections.filter((section) => section.id !== options.trajectLayerId);
+    const trajectSection: LegendItem = {
+      id: options.trajectLayerId,
+      title: "Jaarplan Trajecten",
       entries:
-        layerInfo.legendElements
-          ?.flatMap((legendElement) =>
-            "infos" in legendElement && legendElement.infos
-              ? legendElement.infos.map((info) => ({
-                label: info.label || layerInfo.title || layerInfo.layer.title || "Legenda",
-                color: extractColor(info.symbol),
-              }))
-              : []
-          )
-          .filter((entry) => entry.label) ?? [],
-    }));
+        options.rendererMode === "status"
+          ? (options.statusOptions ?? STATUS_OPTIONS).map((option) => ({
+              label: option.label,
+              color: option.color,
+            }))
+          : (options.modelTypeOptions ?? TYPE_CODERING_OPTIONS).map((option) => ({
+              label: option.label,
+              color: TYPE_CODERING_COLORS[option.value] ?? "#9298ad",
+            })),
+    };
+
+    return [trajectSection, ...nonTrajectSections];
   }
 }
 

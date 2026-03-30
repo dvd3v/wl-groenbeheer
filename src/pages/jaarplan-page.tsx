@@ -183,8 +183,8 @@ export function JaarplanPage() {
       const searchNeedle = filters.search.trim().toLowerCase();
       const matchesSearch =
         !searchNeedle ||
-        traject.hoofdobjec.toLowerCase().includes(searchNeedle) ||
-        traject.modelType.toLowerCase().includes(searchNeedle) ||
+        traject.trajectCode.toLowerCase().includes(searchNeedle) ||
+        traject.typeCodering.toLowerCase().includes(searchNeedle) ||
         item.trajectCode.toLowerCase().includes(searchNeedle) ||
         item.werkzaamheid.toLowerCase().includes(searchNeedle) ||
         item.toelichting.toLowerCase().includes(searchNeedle) ||
@@ -229,7 +229,7 @@ export function JaarplanPage() {
         ),
       }))
       .sort((left, right) =>
-        left.traject.hoofdobjec.localeCompare(right.traject.hoofdobjec, "nl")
+        left.traject.trajectCode.localeCompare(right.traject.trajectCode, "nl")
       );
   }, [filters, planningItems, trajecten]);
 
@@ -520,7 +520,7 @@ export function JaarplanPage() {
                             )}
                             <div>
                               <div className="font-medium text-text">
-                                {group.traject.hoofdobjec || `Traject ${group.traject.objectId}`}
+                                {group.traject.trajectCode || `Traject ${group.traject.objectId}`}
                               </div>
                               <div className="mt-0.5 font-mono text-[10px] text-textMuted">
                                 {group.traject.globalId.slice(0, 8)}
@@ -528,7 +528,7 @@ export function JaarplanPage() {
                             </div>
                           </button>
                         </td>
-                        <td className="px-3 py-3 text-textDim">{group.traject.modelType}</td>
+                        <td className="px-3 py-3 text-textDim">{group.traject.typeCodering}</td>
                         <td className="px-3 py-3">
                           <span
                             className="inline-flex rounded-pill px-2 py-1 text-[10px] font-semibold text-white"

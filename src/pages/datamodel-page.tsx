@@ -29,9 +29,9 @@ export function DatamodelPage() {
             </h1>
             <p className="mt-3 max-w-3xl text-[13px] leading-6 text-textDim">
               De React-app documenteert zowel de live ArcGIS feature layer als het
-              lokale planningmodel voor werkzaamheden. Omdat de productiebron op
-              March 26, 2026 nog geen <code>traject_code</code> bevat, gebruikt v1{" "}
-              <code>GlobalID</code> als koppelsleutel tussen traject en planning.
+              lokale planningmodel voor werkzaamheden. In de huidige productiebron is{" "}
+              <code>traject_code</code> de zichtbare trajectsleutel en gebruikt de app{" "}
+              <code>guid</code> als interne selectie- en koppelsleutel.
             </p>
           </div>
 
@@ -41,8 +41,8 @@ export function DatamodelPage() {
               <div className="mt-1 text-[11px] text-textMuted">Gedocumenteerde lagen</div>
             </div>
             <div className="glass-panel rounded-card p-4">
-              <div className="text-2xl font-bold text-text">GlobalID</div>
-              <div className="mt-1 text-[11px] text-textMuted">Tijdelijke join-strategie</div>
+              <div className="text-2xl font-bold text-text">guid</div>
+              <div className="mt-1 text-[11px] text-textMuted">Actieve join- en selectiecode</div>
             </div>
             <div className="glass-panel rounded-card p-4">
               <div className="text-2xl font-bold text-text">0</div>

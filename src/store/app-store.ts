@@ -51,7 +51,7 @@ const DEFAULT_FILTERS: JaarplanFilters = {
 
 function sortTrajecten(trajecten: TrajectRecord[]) {
   return [...trajecten].sort((left, right) =>
-    left.hoofdobjec.localeCompare(right.hoofdobjec, "nl")
+    left.trajectCode.localeCompare(right.trajectCode, "nl")
   );
 }
 

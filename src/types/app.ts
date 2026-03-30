@@ -2,6 +2,7 @@ import type Geometry from "@arcgis/core/geometry/Geometry.js";
 
 export type EditingMode = "idle" | "create" | "reshape" | "attributes";
 export type MapSelectionSource = "map" | "table" | null;
+export type TrajectRendererMode = "status" | "type_codering";
 export type PlanningRegistrationStatus =
   | "gepland"
   | "in_uitvoering"
@@ -44,20 +45,30 @@ export interface RegimeTemplateDefinition {
 export interface SpatialTrajectFeature {
   objectId: number;
   globalId: string;
-  hoofdobjec: string;
-  modelType: string;
+  guid: string;
+  trajectCode: string;
+  typeCodering: string;
+  objectCount: number | null;
+  bronlagen: string;
   status: number;
   opmerking: string;
   shapeArea: number | null;
   shapeLength: number | null;
-  creator: string;
-  creationDate: number | null;
-  editor: string;
-  editDate: number | null;
   geometry: Geometry | null;
 }
 
 export interface TrajectRecord extends SpatialTrajectFeature {}
+
+export interface BorFeatureSelection {
+  layerId: string;
+  layerTitle: string;
+  displayTitle: string;
+  attributes: Array<{
+    key: string;
+    label: string;
+    value: string;
+  }>;
+}
 
 export interface PendingGeometryEdits {
   mode: "create" | "reshape";
@@ -159,7 +170,7 @@ export interface JaarplanFilters {
 }
 
 export interface AttributeFormValues {
-  hoofdobjec: string;
+  trajectCode: string;
   status: number;
   opmerking: string;
 }
