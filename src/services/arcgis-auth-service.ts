@@ -8,6 +8,10 @@ export class ArcgisAuthService {
     return import.meta.env.VITE_PORTAL_URL?.trim() || DEFAULT_PORTAL_URL;
   }
 
+  signOut(): void {
+    esriId.destroyCredentials();
+  }
+
   register(): void {
     const clientId = import.meta.env.VITE_ARCGIS_CLIENT_ID?.trim();
 

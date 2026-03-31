@@ -257,7 +257,15 @@ function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
   };
 }
 
+function isLayerEditingEnabled(layer: FeatureLayer): boolean {
+  return layer.editingEnabled && layer.capabilities?.operations?.supportsEditing !== false;
+}
+
 export class ArcgisTrajectService {
+  isTrajectLayerEditable(layer: FeatureLayer): boolean {
+    return isLayerEditingEnabled(layer);
+  }
+
   async createTrajectLayer(): Promise<FeatureLayer> {
     const layer = new FeatureLayer({
       url: FEATURE_LAYER_URL,
@@ -460,6 +468,10 @@ export class ArcgisTrajectService {
     geometry: Geometry,
     values: AttributeFormValues
   ): Promise<SpatialTrajectFeature> {
+    if (!this.isTrajectLayerEditable(layer)) {
+      throw new Error("Bewerken is niet ingeschakeld voor deze trajectlaag.");
+    }
+
     const normalizedStatus = Number(values.status);
     const graphic = new Graphic({
       geometry,
@@ -506,6 +518,10 @@ export class ArcgisTrajectService {
     values: AttributeFormValues,
     geometry?: Geometry
   ): Promise<SpatialTrajectFeature> {
+    if (!this.isTrajectLayerEditable(layer)) {
+      throw new Error("Bewerken is niet ingeschakeld voor deze trajectlaag.");
+    }
+
     const normalizedStatus = Number(values.status);
     const graphic = new Graphic({
       geometry,
