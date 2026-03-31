@@ -58,14 +58,13 @@ const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
   bronlagen: [],
 };
 
+const TRAJECT_LAYER_EDITING_DISABLED_MESSAGE =
+  "Bewerken is niet ingeschakeld voor deze trajectlaag.";
+
 function toggleInList<T>(values: T[], value: T): T[] {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value];
-}
-
-function quoteSql(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 function normalizeBronlaag(value: string): string {
@@ -198,6 +197,11 @@ export function MapPage() {
 
   const statusOptions = useMemo<StatusOption[]>(
     () => mapContext?.statusOptions ?? [],
+    [mapContext]
+  );
+  const trajectLayerEditingEnabled = useMemo(
+    () =>
+      mapContext ? arcgisTrajectService.isTrajectLayerEditable(mapContext.trajectLayer) : false,
     [mapContext]
   );
 
@@ -630,6 +634,11 @@ export function MapPage() {
       return;
     }
 
+    if (!trajectLayerEditingEnabled) {
+      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -696,6 +705,11 @@ export function MapPage() {
       return;
     }
 
+    if (!trajectLayerEditingEnabled) {
+      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
+      return;
+    }
+
     const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
       mapContext.trajectLayer,
       selectedTraject.globalId
@@ -716,6 +730,11 @@ export function MapPage() {
 
   function startCreate() {
     if (!mapContext) {
+      return;
+    }
+
+    if (!trajectLayerEditingEnabled) {
+      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
       return;
     }
 
@@ -858,7 +877,15 @@ export function MapPage() {
               }}
             />
             <MapToolbar
-              disabledEdit={!selectedTraject}
+              disabledAdd={!trajectLayerEditingEnabled}
+              disabledEdit={!selectedTraject || !trajectLayerEditingEnabled}
+              disabledReason={
+                !trajectLayerEditingEnabled
+                  ? TRAJECT_LAYER_EDITING_DISABLED_MESSAGE
+                  : !selectedTraject
+                    ? "Selecteer eerst een traject om de vorm aan te passen."
+                    : undefined
+              }
               rendererMode={rendererMode}
               onAddTraject={startCreate}
               onEditShape={() => {

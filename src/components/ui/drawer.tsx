@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import { cn } from "../../lib/cn";
 
 interface DrawerProps {
@@ -20,11 +20,14 @@ export function Drawer({
   children,
   className,
 }: DrawerProps) {
+  const descriptionId = useId();
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/18 backdrop-blur-[1px]" />
         <Dialog.Content
+          aria-describedby={description ? descriptionId : undefined}
           className={cn(
             "fixed right-0 top-0 z-50 h-full w-full max-w-[420px] border-l border-border bg-white/95 shadow-panel outline-none backdrop-blur md:max-w-[420px]",
             className
@@ -37,7 +40,7 @@ export function Drawer({
                   {title}
                 </Dialog.Title>
                 {description ? (
-                  <Dialog.Description className="text-[11px] text-textDim">
+                  <Dialog.Description id={descriptionId} className="text-[11px] text-textDim">
                     {description}
                   </Dialog.Description>
                 ) : null}

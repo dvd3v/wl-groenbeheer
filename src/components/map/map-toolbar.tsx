@@ -4,7 +4,9 @@ import { Button } from "../ui/button";
 import { NativeSelect } from "../ui/native-select";
 
 interface MapToolbarProps {
+  disabledAdd: boolean;
   disabledEdit: boolean;
+  disabledReason?: string;
   rendererMode: TrajectRendererMode;
   onAddTraject: () => void;
   onEditShape: () => void;
@@ -12,7 +14,9 @@ interface MapToolbarProps {
 }
 
 export function MapToolbar({
+  disabledAdd,
   disabledEdit,
+  disabledReason,
   rendererMode,
   onAddTraject,
   onEditShape,
@@ -20,13 +24,22 @@ export function MapToolbar({
 }: MapToolbarProps) {
   return (
     <div className="glass-panel absolute left-16 top-3 z-20 flex items-center gap-2 rounded-[10px] p-2 md:left-20">
-      <Button onClick={onAddTraject}>
+      <Button
+        onClick={onAddTraject}
+        disabled={disabledAdd}
+        title={disabledAdd ? disabledReason : undefined}
+      >
         <Plus className="h-3.5 w-3.5" />
-        Add traject
+        Traject toevoegen
       </Button>
-      <Button variant="outline" onClick={onEditShape} disabled={disabledEdit}>
+      <Button
+        variant="outline"
+        onClick={onEditShape}
+        disabled={disabledEdit}
+        title={disabledEdit ? disabledReason : undefined}
+      >
         <PencilRuler className="h-3.5 w-3.5" />
-        Edit shape
+        Vorm aanpassen
       </Button>
       <div className="min-w-[180px]">
         <NativeSelect

@@ -39,13 +39,16 @@ async function hasAssistantEmbeddings(webMap: WebMap): Promise<boolean> {
   );
 }
 
+function canSyncSpatialReference(view: MapView, proxyView: MapView): boolean {
+  return view.spatialReference.equals(proxyView.spatialReference);
+}
+
 export function AiAssistantOverlay({ view }: AiAssistantOverlayProps) {
   const proxyMapRef = useRef<ArcgisMapElement | null>(null);
   const assistantRef = useRef<ArcgisAssistantElement | null>(null);
   const proxyViewRef = useRef<MapView | null>(null);
   const syncingFromVisibleRef = useRef(false);
   const syncingFromProxyRef = useRef(false);
-  const proxyWebMapRef = useRef<WebMap | null>(null);
   const [open, setOpen] = useState(false);
   const [assistantState, setAssistantState] = useState<"loading" | "ready" | "unavailable">(
     "loading"
@@ -99,7 +102,6 @@ export function AiAssistantOverlay({ view }: AiAssistantOverlayProps) {
           setAssistantMessage("");
         }
 
-        proxyWebMapRef.current = webMap;
         proxyMapRef.current?.setAttribute("data-assistant-proxy", "true");
         proxyMapRef.current!.map = webMap;
       } catch (error) {
@@ -117,6 +119,10 @@ export function AiAssistantOverlay({ view }: AiAssistantOverlayProps) {
         return;
       }
 
+      if (!canSyncSpatialReference(view, proxyViewRef.current)) {
+        return;
+      }
+
       syncingFromVisibleRef.current = true;
       proxyViewRef.current.viewpoint = view.viewpoint.clone();
       queueMicrotask(() => {
@@ -130,6 +136,11 @@ export function AiAssistantOverlay({ view }: AiAssistantOverlayProps) {
       }
 
       proxyViewRef.current = proxyElement.view;
+
+      if (!canSyncSpatialReference(view, proxyViewRef.current)) {
+        return;
+      }
+
       proxyViewRef.current.viewpoint = view.viewpoint.clone();
 
       const proxyWatch = reactiveUtils.watch(
@@ -141,6 +152,10 @@ export function AiAssistantOverlay({ view }: AiAssistantOverlayProps) {
         ],
         () => {
           if (!proxyViewRef.current || syncingFromVisibleRef.current) {
+            return;
+          }
+
+          if (!canSyncSpatialReference(view, proxyViewRef.current)) {
             return;
           }
 

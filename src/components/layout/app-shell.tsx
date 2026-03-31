@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import { cn } from "../../lib/cn";
+import { arcgisAuthService } from "../../services/arcgis-auth-service";
+import { Button } from "../ui/button";
 
 const logoUrl = `${import.meta.env.BASE_URL}wl-logo.png`;
 
@@ -9,6 +12,14 @@ const NAV_ITEMS = [
   { to: "/datamodel", label: "Datamodel" },
 ];
 export function AppShell() {
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  function handleLogout() {
+    setIsLoggingOut(true);
+    arcgisAuthService.signOut();
+    window.location.reload();
+  }
+
   return (
     <div className="flex h-screen flex-col">
       <header className="glass-panel border-x-0 border-t-0">
@@ -41,8 +52,18 @@ export function AppShell() {
             ))}
           </nav>
 
-          <div className="hidden rounded-pill border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accentStrong md:block">
-            WL ArcGIS Online
+          <div className="flex items-center gap-2">
+            <div className="hidden rounded-pill border border-accent/20 bg-accentSoft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accentStrong md:block">
+              WL ArcGIS Online
+            </div>
+            <Button
+              variant="outline"
+              className="px-3 py-1 text-[11px]"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "Uitloggen..." : "Uitloggen"}
+            </Button>
           </div>
         </div>
       </header>
