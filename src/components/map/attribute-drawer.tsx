@@ -26,7 +26,9 @@ interface AttributeDrawerProps {
   statusOptions: StatusOption[];
   planningItems: PlannedWorkItem[];
   saving: boolean;
+  deleting?: boolean;
   onSubmit: (values: AttributeFormValues) => Promise<void>;
+  onDeleteTraject?: () => Promise<void>;
   onPlanningUpdate: (
     workId: string,
     updates: Partial<Pick<PlannedWorkItem, "status" | "datumGepland" | "datumUitgevoerd" | "opmerking">>
@@ -79,7 +81,9 @@ export function AttributeDrawer({
   statusOptions,
   planningItems,
   saving,
+  deleting = false,
   onSubmit,
+  onDeleteTraject,
   onPlanningUpdate,
 }: AttributeDrawerProps) {
   const [activeTab, setActiveTab] = useState<"traject" | "planning">("traject");
@@ -108,6 +112,7 @@ export function AttributeDrawer({
         : [],
     [planningItems, selectedTraject]
   );
+  const isNewGeometry = Boolean(selectedTraject && !selectedTraject.guid.trim());
 
   return (
     <Drawer
@@ -292,10 +297,23 @@ export function AttributeDrawer({
           ) : null}
 
           <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+            {isNewGeometry && onDeleteTraject ? (
+              <Button
+                variant="outline"
+                className="mr-auto border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white"
+                onClick={async () => {
+                  await onDeleteTraject();
+                }}
+                type="button"
+                disabled={saving || deleting}
+              >
+                {deleting ? "Verwijderen..." : "Nieuwe geometrie verwijderen"}
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={() => onOpenChange(false)} type="button">
               Sluiten
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || deleting}>
               {saving ? "Opslaan..." : "wijzigingen opslaan"}
             </Button>
           </div>

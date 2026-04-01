@@ -28,6 +28,7 @@ interface AppState {
     planningItems: PlannedWorkItem[]
   ) => void;
   upsertTraject: (traject: TrajectRecord) => void;
+  removeTraject: (globalId: string) => void;
   setPlanningItems: (items: PlannedWorkItem[]) => void;
   addPlanningItem: (item: PlannedWorkItem) => void;
   updatePlanningItem: (workId: string, partial: Partial<PlannedWorkItem>) => void;
@@ -107,6 +108,22 @@ export const useAppStore = create<AppState>((set) => ({
         trajecten: sortTrajecten(trajecten),
         selectedGlobalId: normalizedTraject.globalId,
         selectedObjectId: normalizedTraject.objectId,
+      };
+    }),
+  removeTraject: (globalId) =>
+    set((state) => {
+      const trajecten = state.trajecten.filter((item) => item.globalId !== globalId);
+      const selectedGlobalId =
+        state.selectedGlobalId === globalId ? null : state.selectedGlobalId;
+
+      return {
+        trajecten,
+        planningItems: state.planningItems.filter((item) => item.trajectGlobalId !== globalId),
+        selectedGlobalId,
+        selectedObjectId:
+          selectedGlobalId === null
+            ? null
+            : trajecten.find((item) => item.globalId === selectedGlobalId)?.objectId ?? null,
       };
     }),
   setPlanningItems: (planningItems) => set({ planningItems }),

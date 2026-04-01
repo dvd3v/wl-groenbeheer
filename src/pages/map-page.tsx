@@ -49,6 +49,7 @@ interface MapTrajectFilters {
   typeCoderingen: string[];
   statuses: number[];
   bronlagen: string[];
+  onlyNewGeometry: boolean;
 }
 
 const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
@@ -56,6 +57,7 @@ const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
   typeCoderingen: [],
   statuses: [],
   bronlagen: [],
+  onlyNewGeometry: false,
 };
 
 function toggleInList<T>(values: T[], value: T): T[] {
@@ -80,8 +82,22 @@ function parseBronlagen(value: string): string[] {
     .sort((left, right) => left.localeCompare(right, "nl"));
 }
 
+function isNewTrajectGeometry(traject: TrajectRecord): boolean {
+  return !traject.guid.trim();
+}
+
 function arraysEqual<T>(left: T[], right: T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function toTrajectGlobalId(attributes: Record<string, unknown>): string {
+  const guid = String(attributes.guid ?? "").trim();
+  if (guid) {
+    return guid;
+  }
+
+  const objectId = Number(attributes.OBJECTID);
+  return Number.isFinite(objectId) ? `oid:${objectId}` : "";
 }
 
 function toAttributeLabel(key: string): string {
@@ -176,6 +192,7 @@ export function MapPage() {
   const setMapViewState = useAppStore((state) => state.setMapViewState);
   const setLayerVisibility = useAppStore((state) => state.setLayerVisibility);
   const upsertTraject = useAppStore((state) => state.upsertTraject);
+  const removeTraject = useAppStore((state) => state.removeTraject);
   const updatePlanningItem = useAppStore((state) => state.updatePlanningItem);
   const [mapContext, setMapContext] = useState<HeadlessMapContext | null>(null);
   const [layerItems, setLayerItems] = useState<LayerToggleItem[]>([]);
@@ -188,6 +205,7 @@ export function MapPage() {
   const [draftValues, setDraftValues] = useState<AttributeFormValues | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const availableTypeCoderingen = useMemo(
     () =>
@@ -205,7 +223,7 @@ export function MapPage() {
     () =>
       trajecten.filter((traject) => {
         const matchesObjectCount =
-          traject.objectCount !== null && traject.objectCount <= mapFilters.objectCountMax;
+          traject.objectCount === null || traject.objectCount <= mapFilters.objectCountMax;
         const matchesTypeCodering =
           mapFilters.typeCoderingen.length === 0 ||
           mapFilters.typeCoderingen.includes(traject.typeCodering);
@@ -218,12 +236,15 @@ export function MapPage() {
         const matchesBronlagen =
           mapFilters.bronlagen.length === 0 ||
           arraysEqual(bronlagen, selectedBronlagen);
+        const matchesNewGeometry =
+          !mapFilters.onlyNewGeometry || isNewTrajectGeometry(traject);
 
         return (
           matchesObjectCount &&
           matchesTypeCodering &&
           matchesStatus &&
-          matchesBronlagen
+          matchesBronlagen &&
+          matchesNewGeometry
         );
       }),
     [mapFilters, trajecten]
@@ -424,7 +445,9 @@ export function MapPage() {
           }
 
           setSelectedBorFeature(null);
-          const globalId = String(trajectHit.graphic.attributes.guid ?? "");
+          const globalId = toTrajectGlobalId(
+            trajectHit.graphic.attributes as Record<string, unknown>
+          );
           if (!globalId) {
             return;
           }
@@ -612,7 +635,9 @@ export function MapPage() {
         return;
       }
 
-      const objectIds = filteredTrajecten.map((traject) => traject.objectId);
+      const objectIds = filteredTrajecten
+        .map((traject) => traject.objectId)
+        .filter((objectId) => Number.isFinite(objectId));
       layerView.filter = objectIds.length
         ? { where: `OBJECTID IN (${objectIds.join(",")})` }
         : { where: "1=0" };
@@ -691,6 +716,39 @@ export function MapPage() {
     updatePlanningItem(workId, registration);
   }
 
+  async function handleDeleteTraject() {
+    if (!mapContext || !selectedTraject) {
+      return;
+    }
+
+    if (!isNewTrajectGeometry(selectedTraject)) {
+      setError("Alleen nieuw ingetekende geometrieën mogen worden verwijderd.");
+      return;
+    }
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      await arcgisTrajectService.deleteTraject(mapContext.trajectLayer, selectedTraject);
+      highlightRef.current?.remove();
+      removeTraject(selectedTraject.globalId);
+      setSelectedBorFeature(null);
+      setDraftValues(null);
+      setPendingGeometryEdits(null);
+      setZoomTargetGlobalId(null);
+      setEditingMode("idle");
+      setAttributeDrawerOpen(false);
+      selectTraject(null, "map");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Verwijderen is mislukt."
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function startReshape() {
     if (!mapContext || !selectedTraject) {
       return;
@@ -755,6 +813,7 @@ export function MapPage() {
         selectedTypeCoderingen={mapFilters.typeCoderingen}
         selectedStatuses={mapFilters.statuses}
         selectedBronlagen={mapFilters.bronlagen}
+        onlyNewGeometry={mapFilters.onlyNewGeometry}
         onObjectCountMaxChange={(value) =>
           setMapFilters((current) => ({
             ...current,
@@ -779,6 +838,12 @@ export function MapPage() {
           setMapFilters((current) => ({
             ...current,
             bronlagen: toggleInList(current.bronlagen, value),
+          }))
+        }
+        onToggleOnlyNewGeometry={() =>
+          setMapFilters((current) => ({
+            ...current,
+            onlyNewGeometry: !current.onlyNewGeometry,
           }))
         }
         onClearFilters={() => setMapFilters(DEFAULT_MAP_FILTERS)}
@@ -905,7 +970,9 @@ export function MapPage() {
           statusOptions={mapContext?.statusOptions ?? []}
           planningItems={planningItems}
           saving={saving}
+          deleting={deleting}
           onSubmit={handleSave}
+          onDeleteTraject={handleDeleteTraject}
           onPlanningUpdate={handlePlanningUpdate}
         />
       </section>

@@ -15,10 +15,12 @@ interface MapSidebarProps {
   selectedTypeCoderingen: string[];
   selectedStatuses: number[];
   selectedBronlagen: string[];
+  onlyNewGeometry: boolean;
   onObjectCountMaxChange: (value: number) => void;
   onToggleTypeCodering: (value: string) => void;
   onToggleStatus: (value: number) => void;
   onToggleBronlaag: (value: string) => void;
+  onToggleOnlyNewGeometry: () => void;
   onClearFilters: () => void;
 }
 
@@ -33,10 +35,12 @@ export function MapSidebar({
   selectedTypeCoderingen,
   selectedStatuses,
   selectedBronlagen,
+  onlyNewGeometry,
   onObjectCountMaxChange,
   onToggleTypeCodering,
   onToggleStatus,
   onToggleBronlaag,
+  onToggleOnlyNewGeometry,
   onClearFilters,
 }: MapSidebarProps) {
   const borLegendLayers = layers.filter(
@@ -52,7 +56,8 @@ export function MapSidebar({
     objectCountMax < 160 ||
     selectedTypeCoderingen.length > 0 ||
     selectedStatuses.length > 0 ||
-    selectedBronlagen.length > 0;
+    selectedBronlagen.length > 0 ||
+    onlyNewGeometry;
 
   return (
     <aside className="app-scrollbar hidden h-full w-[310px] overflow-y-auto border-r border-border bg-white/85 backdrop-blur md:block">
@@ -161,6 +166,21 @@ export function MapSidebar({
                     </label>
                   ))}
                 </div>
+              </section>
+
+              <section className="space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Nieuwe geometrie
+                </div>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-surfaceAlt px-2 py-2 text-[11px] text-textDim">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-current"
+                    checked={onlyNewGeometry}
+                    onChange={onToggleOnlyNewGeometry}
+                  />
+                  <span>Toon alleen nieuw ingetekende trajecten</span>
+                </label>
               </section>
 
               <section className="space-y-2">
