@@ -229,12 +229,24 @@ function extractColor(symbol: Graphic["symbol"] | null | undefined): string | nu
   return null;
 }
 
+function toTrajectGlobalId(attributes: Record<string, unknown>): string {
+  const guid = String(attributes.guid ?? "").trim();
+  if (guid) {
+    return guid;
+  }
+
+  const objectId = Number(attributes.OBJECTID);
+  return Number.isFinite(objectId) ? `oid:${objectId}` : "";
+}
+
 function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
+  const objectId = Number(graphic.attributes.OBJECTID);
   const guid = String(graphic.attributes.guid ?? "");
+  const globalId = toTrajectGlobalId(graphic.attributes as Record<string, unknown>);
 
   return {
-    objectId: Number(graphic.attributes.OBJECTID),
-    globalId: guid,
+    objectId,
+    globalId,
     guid,
     trajectCode: String(graphic.attributes.traject_code ?? ""),
     typeCodering: String(graphic.attributes.type_codering ?? ""),
@@ -454,6 +466,21 @@ export class ArcgisTrajectService {
     layer: FeatureLayer,
     globalId: string
   ): Promise<Graphic | null> {
+    if (globalId.startsWith("oid:")) {
+      const objectId = Number(globalId.slice(4));
+      if (!Number.isFinite(objectId)) {
+        return null;
+      }
+
+      const featureSet = await layer.queryFeatures({
+        objectIds: [objectId],
+        outFields: ["*"],
+        returnGeometry: true,
+      });
+
+      return featureSet.features[0] ?? null;
+    }
+
     const featureSet = await layer.queryFeatures({
       where: `guid='${globalId.replace(/'/g, "''")}'`,
       outFields: ["*"],
@@ -554,6 +581,32 @@ export class ArcgisTrajectService {
     }
 
     return toSpatialFeature(refreshedFeature);
+  }
+
+  async deleteTraject(
+    layer: FeatureLayer,
+    feature: SpatialTrajectFeature
+  ): Promise<void> {
+    const result = await layer.applyEdits({
+      deleteFeatures: [
+        new Graphic({
+          attributes: {
+            OBJECTID: feature.objectId,
+          },
+        }),
+      ],
+    });
+    const deleteResult = result.deleteFeatureResults?.[0];
+
+    if (deleteResult?.error) {
+      throw new Error(deleteResult.error.message);
+    }
+
+    if (!deleteResult?.objectId) {
+      throw new Error("ArcGIS gaf geen bevestiging terug voor het verwijderen van het traject.");
+    }
+
+    layer.refresh();
   }
 
   extractLayerToggleItems(collection: Collection<ListItem>): LayerToggleItem[] {
