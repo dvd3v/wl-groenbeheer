@@ -169,8 +169,141 @@ export interface JaarplanFilters {
   search: string;
 }
 
+export interface SharedJaarplanFilters {
+  search: string;
+  trajectCode: string;
+  uitvoerderOnderhoud: string;
+  regime: string;
+  werkzaamheid: string;
+  werkperiode: string;
+  zijde: string;
+  afvoeren: string;
+  signal: string;
+  statusMaatregel: string;
+  datumGepland: string;
+  datumUitgevoerd: string;
+  steekproefStatus: string;
+  hasMeasuresOnly: boolean;
+}
+
 export interface AttributeFormValues {
   trajectCode: string;
   status: number;
   opmerking: string;
 }
+
+export interface JaarplanTrajectRecord {
+  objectId: number;
+  globalId: string;
+  guid: string;
+  trajectCode: string;
+  uitvoerderOnderhoud: string;
+  geometry: Geometry | null;
+}
+
+export interface JaarplanDomainOption {
+  value: string;
+  label: string;
+  rawValue: string | number;
+}
+
+export interface JaarplanSubtypeConfig {
+  regimeValue: string;
+  regimeLabel: string;
+  werkzaamhedenOptions: JaarplanDomainOption[];
+  toelichtingOptions: JaarplanDomainOption[];
+  defaultWerkzaamheidValue: string | null;
+  defaultToelichtingValue: string | null;
+}
+
+export interface JaarplanMetadata {
+  editable: boolean;
+  relationshipId: number | null;
+  regimeOptions: JaarplanDomainOption[];
+  subtypeField: string | null;
+  regimeFieldName: string;
+  werkzaamhedenFieldName: string;
+  toelichtingFieldName: string;
+  werkperiodeVanFieldName: string;
+  werkperiodeTotFieldName: string;
+  zijdeFieldName: string;
+  afvoerenFieldName: string;
+  soortspecifiekeMaatFieldName: string;
+  locatiebezoekFieldName: string;
+  subtypeConfigsByRegime: Record<string, JaarplanSubtypeConfig>;
+  werkperiodeOptions: JaarplanDomainOption[];
+  zijdeOptions: JaarplanDomainOption[];
+  afvoerenOptions: JaarplanDomainOption[];
+  jaNeeOptions: JaarplanDomainOption[];
+  uitvoerderOptions: JaarplanDomainOption[];
+}
+
+export type SteekproefStatus =
+  | "niet_beoordeeld"
+  | "ingepland"
+  | "goedgekeurd"
+  | "afgekeurd";
+
+export type MaatregelStatus =
+  | "geen_status"
+  | "gepland"
+  | "uitgevoerd"
+  | "deels_uitgevoerd"
+  | "niet_uitgevoerd";
+
+export interface JaarplanLocalFields {
+  statusMaatregel: MaatregelStatus;
+  datumGepland: string;
+  datumUitgevoerd: string;
+  steekproefStatus: SteekproefStatus;
+  redenNietUitgevoerd: string;
+  foto: string;
+  opmerking: string;
+}
+
+export interface JaarplanMeasureRecord extends JaarplanLocalFields {
+  objectId: number;
+  globalId: string;
+  trajectGuid: string;
+  trajectGlobalId: string;
+  trajectCode: string;
+  regimeValue: string;
+  regimeLabel: string;
+  regimeNumber: number | null;
+  werkzaamhedenValue: string;
+  werkzaamheidLabel: string;
+  toelichtingValue: string;
+  toelichtingLabel: string;
+  werkperiodeVanValue: string;
+  werkperiodeVanLabel: string;
+  werkperiodeTotValue: string;
+  werkperiodeTotLabel: string;
+  zijdeValue: string;
+  zijdeLabel: string;
+  afvoerenValue: string;
+  afvoerenLabel: string;
+  soortspecifiekeMaatValue: string;
+  soortspecifiekeMaatLabel: string;
+  soortspecifiekeMaat: boolean;
+  locatiebezoekValue: string;
+  locatiebezoekLabel: string;
+  locatiebezoek: boolean;
+}
+
+export interface JaarplanMeasureServerInput {
+  trajectGuid: string;
+  trajectGlobalId: string;
+  regimeValue: string;
+  werkzaamhedenValue: string;
+  toelichtingValue: string;
+  werkperiodeVanValue: string;
+  werkperiodeTotValue: string;
+  zijdeValue: string;
+  afvoerenValue: string;
+  soortspecifiekeMaatValue: string;
+  locatiebezoekValue: string;
+}
+
+export interface JaarplanMeasureFormValues extends JaarplanMeasureServerInput, JaarplanLocalFields {}
+
+export interface JaarplanMapViewState extends MapViewState {}

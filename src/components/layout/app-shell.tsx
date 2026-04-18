@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 const logoUrl = `${import.meta.env.BASE_URL}wl-logo.png`;
 
 const NAV_ITEMS = [
+  { to: "/map-traject-controle", label: "Kaart Traject Controle" },
   { to: "/map", label: "Kaart" },
   { to: "/jaarplan", label: "Jaarplan" },
   { to: "/datamodel", label: "Datamodel" },

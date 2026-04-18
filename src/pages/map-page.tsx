@@ -1,310 +1,200 @@
 import * as reactiveUtils from "@arcgis/core/core/reactiveUtils.js";
-import type { ViewHitTestResult } from "@arcgis/core/views/types.js";
 import type FeatureLayerView from "@arcgis/core/views/layers/FeatureLayerView.js";
-import { AlertTriangle, Layers3, LoaderCircle, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AiAssistantOverlay } from "../components/map/ai-assistant-overlay";
-import { AttributeDrawer } from "../components/map/attribute-drawer";
-import { BasemapSwitcher } from "../components/map/basemap-switcher";
-import { MapSidebar } from "../components/map/map-sidebar";
-import { MapToolbar } from "../components/map/map-toolbar";
-import { Button } from "../components/ui/button";
-import { mockPlanningService } from "../services/mock-planning-service";
 import {
-  arcgisTrajectService,
-  type HeadlessMapContext,
-} from "../services/arcgis-traject-service";
+  AlertTriangle,
+  Layers3,
+  LoaderCircle,
+  MapPinned,
+  Plus,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { JaarplanFilterPanel } from "../components/jaarplan/jaarplan-filter-panel";
+import { MaatregelForm } from "../components/jaarplan/maatregel-form";
+import {
+  MeasureSignals,
+  MaatregelStatusBadge,
+  getMaatregelStatusPalette,
+  RegimeBadge,
+} from "../components/jaarplan/maatregel-badges";
+import { BasemapSwitcher } from "../components/map/basemap-switcher";
+import { Button } from "../components/ui/button";
+import { Drawer } from "../components/ui/drawer";
+import { arcgisJaarplanService, type JaarplanMapContext } from "../services/arcgis-jaarplan-service";
+import {
+  formatWerkperiodeLabel,
+  getAggregatedMaatregelStatus,
+  getFilteredJaarplanGroups,
+} from "../lib/jaarplan-filtering";
 import { useAppStore } from "../store/app-store";
 import type {
-  AttributeFormValues,
-  BorFeatureSelection,
+  JaarplanMeasureFormValues,
   LayerToggleItem,
-  LegendItem,
-  PlanningRegistration,
-  StatusOption,
-  TrajectRendererMode,
-  TrajectRecord,
+  MaatregelStatus,
+  MapViewState,
 } from "../types/app";
 
-const BRONLAAG_OPTIONS = [
-  "terreindeel",
-  "waterobject",
-  "groenobject",
-  "verhardingsobject",
-] as const;
-
-const BRONLAAG_ALIASES: Record<string, string> = {
-  terreindeel: "terreindeel",
-  terreindelen: "terreindeel",
-  waterobject: "waterobject",
-  waterobjecten: "waterobject",
-  groenobject: "groenobject",
-  groenobjecten: "groenobject",
-  verhardingsobject: "verhardingsobject",
-  verhardingsobjecten: "verhardingsobject",
-};
-
-interface MapTrajectFilters {
-  objectCountMax: number;
-  typeCoderingen: string[];
-  statuses: number[];
-  bronlagen: string[];
-  onlyNewGeometry: boolean;
-}
-
-const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
-  objectCountMax: 160,
-  typeCoderingen: [],
-  statuses: [],
-  bronlagen: [],
-  onlyNewGeometry: false,
-};
-
-const TRAJECT_LAYER_EDITING_DISABLED_MESSAGE =
-  "Bewerken is niet ingeschakeld voor deze trajectlaag.";
-
-function toggleInList<T>(values: T[], value: T): T[] {
-  return values.includes(value)
-    ? values.filter((item) => item !== value)
-    : [...values, value];
-}
-
-function normalizeBronlaag(value: string): string {
-  return BRONLAAG_ALIASES[value.trim().toLowerCase()] ?? value.trim().toLowerCase();
-}
-
-function parseBronlagen(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => normalizeBronlaag(item))
+function toSelectOptions(values: string[]) {
+  return [...new Set(values)]
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right, "nl"));
+    .sort((left, right) => left.localeCompare(right, "nl"))
+    .map((value) => ({ value, label: value }));
 }
 
-function isNewTrajectGeometry(traject: TrajectRecord): boolean {
-  return !traject.guid.trim();
-}
-
-function arraysEqual<T>(left: T[], right: T[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function toTrajectGlobalId(attributes: Record<string, unknown>): string {
-  const guid = String(attributes.guid ?? "").trim();
-  if (guid) {
-    return guid;
-  }
-
-  const objectId = Number(attributes.OBJECTID);
-  return Number.isFinite(objectId) ? `oid:${objectId}` : "";
-}
-
-function toAttributeLabel(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatAttributeValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "—";
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => formatAttributeValue(item)).join(", ");
-  }
-
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-
-  return String(value);
-}
-
-function toBorFeatureSelection(
-  result: ViewHitTestResult["results"][number]
-): BorFeatureSelection | null {
-  if (!("graphic" in result)) {
-    return null;
-  }
-
-  const layer = result.graphic.layer;
-  if (!layer || layer.type !== "feature") {
-    return null;
-  }
-
-  const attributes = Object.entries(result.graphic.attributes ?? {})
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => ({
-      key,
-      label: toAttributeLabel(key),
-      value: formatAttributeValue(value),
-    }))
-    .sort((left, right) => left.label.localeCompare(right.label, "nl"));
-
-  const objectIdAttribute =
-    attributes.find((attribute) => attribute.key.toUpperCase() === "OBJECTID")?.value ?? "";
-
-  return {
-    layerId: layer.uid,
-    layerTitle: layer.title || "BOR object",
-    displayTitle: objectIdAttribute
-      ? `${layer.title || "BOR object"} ${objectIdAttribute}`
-      : layer.title || "BOR object",
-    attributes,
-  };
-}
-
-function toFormValues(traject: TrajectRecord | null, statusFallback: number): AttributeFormValues {
-  return {
-    trajectCode: traject?.trajectCode ?? "",
-    status: traject?.status ?? statusFallback,
-    opmerking: traject?.opmerking ?? "",
-  };
-}
+const MAP_STATUS_LEGEND_ORDER: MaatregelStatus[] = [
+  "uitgevoerd",
+  "deels_uitgevoerd",
+  "niet_uitgevoerd",
+  "gepland",
+  "geen_status",
+];
 
 export function MapPage() {
+  const navigate = useNavigate();
   const mapRef = useRef<HTMLDivElement | null>(null);
   const highlightRef = useRef<{ remove: () => void } | null>(null);
-  const trajectByGlobalIdRef = useRef<Map<string, TrajectRecord>>(new Map());
-  const mapViewStateRef = useRef<typeof mapViewState>(null);
-  const layerVisibilityRef = useRef<Record<string, boolean>>({});
-  const rendererModeRef = useRef<TrajectRendererMode>("status");
-  const trajecten = useAppStore((state) => state.trajecten);
-  const planningItems = useAppStore((state) => state.planningItems);
-  const initialStatusByGlobalId = useAppStore((state) => state.initialStatusByGlobalId);
-  const selectedGlobalId = useAppStore((state) => state.selectedGlobalId);
-  const selectedTraject = useAppStore((state) =>
-    state.trajecten.find((traject) => traject.globalId === state.selectedGlobalId) ?? null
+  const mapViewStateRef = useRef<MapViewState | null>(null);
+  const trajecten = useAppStore((state) => state.jaarplanTrajecten);
+  const measures = useAppStore((state) => state.jaarplanMeasures);
+  const metadata = useAppStore((state) => state.jaarplanMetadata);
+  const jaarplanLoading = useAppStore((state) => state.jaarplanLoading);
+  const jaarplanError = useAppStore((state) => state.jaarplanError);
+  const sharedFilters = useAppStore((state) => state.jaarplanFilters);
+  const setJaarplanFilters = useAppStore((state) => state.setJaarplanFilters);
+  const resetJaarplanFilters = useAppStore((state) => state.resetJaarplanFilters);
+  const selectedTrajectId = useAppStore((state) => state.selectedJaarplanTrajectId);
+  const zoomTargetGlobalId = useAppStore((state) => state.jaarplanZoomTargetGlobalId);
+  const jaarplanMapViewState = useAppStore((state) => state.jaarplanMapViewState);
+  const selectJaarplanTraject = useAppStore((state) => state.selectJaarplanTraject);
+  const setJaarplanZoomTargetGlobalId = useAppStore(
+    (state) => state.setJaarplanZoomTargetGlobalId
   );
-  const attributeDrawerOpen = useAppStore((state) => state.attributeDrawerOpen);
-  const pendingGeometryEdits = useAppStore((state) => state.pendingGeometryEdits);
-  const zoomTargetGlobalId = useAppStore((state) => state.zoomTargetGlobalId);
-  const mapViewState = useAppStore((state) => state.mapViewState);
-  const layerVisibilityByTitle = useAppStore((state) => state.layerVisibilityByTitle);
-  const selectTraject = useAppStore((state) => state.selectTraject);
-  const setAttributeDrawerOpen = useAppStore((state) => state.setAttributeDrawerOpen);
-  const setEditingMode = useAppStore((state) => state.setEditingMode);
-  const setPendingGeometryEdits = useAppStore((state) => state.setPendingGeometryEdits);
-  const setZoomTargetGlobalId = useAppStore((state) => state.setZoomTargetGlobalId);
-  const setMapViewState = useAppStore((state) => state.setMapViewState);
-  const setLayerVisibility = useAppStore((state) => state.setLayerVisibility);
-  const upsertTraject = useAppStore((state) => state.upsertTraject);
-  const removeTraject = useAppStore((state) => state.removeTraject);
-  const updatePlanningItem = useAppStore((state) => state.updatePlanningItem);
-  const [mapContext, setMapContext] = useState<HeadlessMapContext | null>(null);
+  const setJaarplanMapViewState = useAppStore((state) => state.setJaarplanMapViewState);
+  const upsertJaarplanMeasure = useAppStore((state) => state.upsertJaarplanMeasure);
+
+  const [mapContext, setMapContext] = useState<JaarplanMapContext | null>(null);
   const [layerItems, setLayerItems] = useState<LayerToggleItem[]>([]);
-  const [legendItems, setLegendItems] = useState<LegendItem[]>([]);
   const [activeBasemapId, setActiveBasemapId] = useState("light");
-  const [rendererMode, setRendererMode] = useState<TrajectRendererMode>("status");
-  const [mapFilters, setMapFilters] = useState<MapTrajectFilters>(DEFAULT_MAP_FILTERS);
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
-  const [selectedBorFeature, setSelectedBorFeature] = useState<BorFeatureSelection | null>(null);
-  const [draftValues, setDraftValues] = useState<AttributeFormValues | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [addFormOpen, setAddFormOpen] = useState(false);
+  const [draftMeasure, setDraftMeasure] = useState<JaarplanMeasureFormValues | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const availableTypeCoderingen = useMemo(
+  const selectFilterOptions = useMemo(() => {
+    return {
+      uitvoerderOnderhoud:
+        metadata?.uitvoerderOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })) ?? [],
+      regime:
+        metadata?.regimeOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })) ?? [],
+      werkzaamheid: toSelectOptions(measures.map((measure) => measure.werkzaamheidLabel)),
+      werkperiode:
+        metadata?.werkperiodeOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })) ?? [],
+      zijde:
+        metadata?.zijdeOptions.map((option) => ({
+          value: option.label,
+          label: option.label,
+        })) ?? [],
+      afvoeren:
+        metadata?.afvoerenOptions.map((option) => ({
+          value: option.label,
+          label: option.label,
+        })) ?? [],
+      statusMaatregel: arcgisJaarplanService.maatregelStatusOptions.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+      steekproefStatus: arcgisJaarplanService.steekproefStatusOptions.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    };
+  }, [measures, metadata]);
+
+  const filteredGroups = useMemo(
+    () => getFilteredJaarplanGroups(trajecten, measures, sharedFilters),
+    [measures, sharedFilters, trajecten]
+  );
+  const filteredTrajectIds = useMemo(
+    () => filteredGroups.map((group) => group.traject.globalId),
+    [filteredGroups]
+  );
+  const selectedTraject = useMemo(
+    () => trajecten.find((traject) => traject.globalId === selectedTrajectId) ?? null,
+    [selectedTrajectId, trajecten]
+  );
+  const selectedMeasures = useMemo(
+    () => filteredGroups.find((group) => group.traject.globalId === selectedTrajectId)?.measures ?? [],
+    [filteredGroups, selectedTrajectId]
+  );
+  const activeFilterCount = useMemo(
     () =>
-      [...new Set(trajecten.map((traject) => traject.typeCodering).filter(Boolean))]
-        .sort((left, right) => left.localeCompare(right, "nl")),
-    [trajecten]
+      Object.entries(sharedFilters).filter(([, value]) =>
+        typeof value === "boolean" ? value : Boolean(value)
+      ).length,
+    [sharedFilters]
   );
-
-  const statusOptions = useMemo<StatusOption[]>(
-    () => mapContext?.statusOptions ?? [],
-    [mapContext]
-  );
-  const trajectLayerEditingEnabled = useMemo(
+  const activeLegendLayers = useMemo(
     () =>
-      mapContext ? arcgisTrajectService.isTrajectLayerEditable(mapContext.trajectLayer) : false,
-    [mapContext]
+      layerItems.filter(
+        (layer) =>
+          layer.visible &&
+          layer.title !== "BOR objectlagen" &&
+          layer.title !== "Jaarplan Maatregelen"
+      ),
+    [layerItems]
   );
-
-  const filteredTrajecten = useMemo(
+  const trajectLayerVisible = activeLegendLayers.some(
+    (layer) => layer.title === "Jaarplan Trajecten"
+  );
+  const trajectStatusById = useMemo(
     () =>
-      trajecten.filter((traject) => {
-        const matchesObjectCount =
-          traject.objectCount === null || traject.objectCount <= mapFilters.objectCountMax;
-        const matchesTypeCodering =
-          mapFilters.typeCoderingen.length === 0 ||
-          mapFilters.typeCoderingen.includes(traject.typeCodering);
-        const matchesStatus =
-          mapFilters.statuses.length === 0 || mapFilters.statuses.includes(traject.status);
-        const bronlagen = parseBronlagen(traject.bronlagen);
-        const selectedBronlagen = [...mapFilters.bronlagen]
-          .map((value) => normalizeBronlaag(value))
-          .sort((left, right) => left.localeCompare(right, "nl"));
-        const matchesBronlagen =
-          mapFilters.bronlagen.length === 0 ||
-          arraysEqual(bronlagen, selectedBronlagen);
-        const matchesNewGeometry =
-          !mapFilters.onlyNewGeometry || isNewTrajectGeometry(traject);
-
-        return (
-          matchesObjectCount &&
-          matchesTypeCodering &&
-          matchesStatus &&
-          matchesBronlagen &&
-          matchesNewGeometry
-        );
-      }),
-    [mapFilters, trajecten]
+      Object.fromEntries(
+        filteredGroups.map((group) => [
+          group.traject.globalId,
+          getAggregatedMaatregelStatus(group.measures),
+        ])
+      ),
+    [filteredGroups]
   );
 
-  const countsByStatus = useMemo(
-    () =>
-      filteredTrajecten.reduce<Record<number, number>>((acc, traject) => {
-        const status = Number(traject.status);
-        acc[status] = (acc[status] ?? 0) + 1;
-        return acc;
-      }, {}),
-    [filteredTrajecten]
-  );
-
-  const defaultFormValues = useMemo(
-    () => ({
-      trajectCode: draftValues?.trajectCode || selectedTraject?.trajectCode || "",
-      status:
-        draftValues?.status ??
-        selectedTraject?.status ??
-        mapContext?.statusOptions[0]?.value ??
-        1,
-      opmerking: draftValues?.opmerking ?? selectedTraject?.opmerking ?? "",
-    }),
-    [draftValues, mapContext, selectedTraject]
-  );
-  useEffect(() => {
-    trajectByGlobalIdRef.current = new Map(
-      trajecten.map((traject) => [traject.globalId, traject])
-    );
-  }, [trajecten]);
+  function handleSharedFilterChange<K extends keyof typeof sharedFilters>(
+    key: K,
+    value: (typeof sharedFilters)[K]
+  ) {
+    setJaarplanFilters({ [key]: value } as Partial<typeof sharedFilters>);
+  }
 
   useEffect(() => {
-    mapViewStateRef.current = mapViewState;
-  }, [mapViewState]);
+    mapViewStateRef.current = jaarplanMapViewState;
+  }, [jaarplanMapViewState]);
 
   useEffect(() => {
-    layerVisibilityRef.current = layerVisibilityByTitle;
-  }, [layerVisibilityByTitle]);
-
-  useEffect(() => {
-    rendererModeRef.current = rendererMode;
-  }, [rendererMode]);
-
-  useEffect(() => {
-    if (!mapRef.current) {
+    if (!metadata || !mapRef.current) {
       return;
     }
 
+    const metadataSnapshot = metadata;
     let active = true;
-    let localContext: HeadlessMapContext | null = null;
+    let localContext: JaarplanMapContext | null = null;
 
     async function initMap() {
       try {
-        const createdContext = await arcgisTrajectService.createHeadlessMap(mapRef.current!);
+        const createdContext = await arcgisJaarplanService.createHeadlessMap(
+          mapRef.current!,
+          metadataSnapshot
+        );
 
         if (!active) {
           createdContext.view.destroy();
@@ -312,6 +202,7 @@ export function MapPage() {
         }
 
         localContext = createdContext;
+
         if (mapViewStateRef.current) {
           createdContext.view.center = {
             x: mapViewStateRef.current.centerX,
@@ -327,26 +218,11 @@ export function MapPage() {
           createdContext.view.rotation = mapViewStateRef.current.rotation;
         }
 
-        createdContext.layerListViewModel.operationalItems.forEach((item) => {
-          const savedVisibility = layerVisibilityRef.current[item.title];
-          if (typeof savedVisibility === "boolean") {
-            item.visible = savedVisibility;
-          }
-        });
-
         setMapContext(createdContext);
         setLayerItems(
-          arcgisTrajectService.extractLayerToggleItems(
+          arcgisJaarplanService.extractLayerToggleItems(
             createdContext.layerListViewModel.operationalItems
           )
-        );
-        setLegendItems(
-          arcgisTrajectService.extractLegendItems(createdContext.legendViewModel, {
-            rendererMode,
-            trajectLayerId: createdContext.trajectLayer.uid,
-            statusOptions: createdContext.statusOptions,
-            modelTypeOptions: createdContext.modelTypeOptions,
-          })
         );
 
         const layerWatch = reactiveUtils.watch(
@@ -356,26 +232,12 @@ export function MapPage() {
             ),
           () => {
             setLayerItems(
-              arcgisTrajectService.extractLayerToggleItems(
+              arcgisJaarplanService.extractLayerToggleItems(
                 createdContext.layerListViewModel.operationalItems
               )
             );
           },
           { initial: true }
-        );
-
-        const legendCollectionHandle = createdContext.legendViewModel.activeLayerInfos.on(
-          "change",
-          () => {
-            setLegendItems(
-              arcgisTrajectService.extractLegendItems(createdContext.legendViewModel, {
-                rendererMode: rendererModeRef.current,
-                trajectLayerId: createdContext.trajectLayer.uid,
-                statusOptions: createdContext.statusOptions,
-                modelTypeOptions: createdContext.modelTypeOptions,
-              })
-            );
-          }
         );
 
         const viewStateWatch = reactiveUtils.watch(
@@ -391,7 +253,7 @@ export function MapPage() {
               return;
             }
 
-            setMapViewState({
+            setJaarplanMapViewState({
               centerX: center.x,
               centerY: center.y,
               zoom: createdContext.view.zoom,
@@ -406,7 +268,7 @@ export function MapPage() {
           { initial: true }
         );
 
-        const mapClickHandle = createdContext.view.on("click", async (event) => {
+        const clickHandle = createdContext.view.on("click", async (event) => {
           const hitTest = await createdContext.view.hitTest(event);
           const trajectHit = hitTest.results.find(
             (result) =>
@@ -414,114 +276,35 @@ export function MapPage() {
           );
 
           if (!trajectHit || !("graphic" in trajectHit)) {
-            const borHit = hitTest.results.find((result) => {
-              if (!("graphic" in result)) {
-                return false;
-              }
-
-              const layer = result.graphic.layer;
-              return layer?.type === "feature" && layer !== createdContext.trajectLayer;
-            });
-
-            if (borHit) {
-              const borFeature = toBorFeatureSelection(borHit);
-
-              if (borFeature) {
-                highlightRef.current?.remove();
-                setZoomTargetGlobalId(null);
-                selectTraject(null, "map");
-                setDraftValues(null);
-                setSelectedBorFeature(borFeature);
-                setAttributeDrawerOpen(true);
-                setEditingMode("idle");
-                return;
-              }
-            }
-
             highlightRef.current?.remove();
-            setZoomTargetGlobalId(null);
-            selectTraject(null, "map");
-            setDraftValues(null);
-            setSelectedBorFeature(null);
-            setAttributeDrawerOpen(false);
-            setEditingMode("idle");
+            selectJaarplanTraject(null, "map");
+            setDrawerOpen(false);
+            setAddFormOpen(false);
+            setDraftMeasure(null);
             return;
           }
 
-          setSelectedBorFeature(null);
-          const globalId = toTrajectGlobalId(
-            trajectHit.graphic.attributes as Record<string, unknown>
-          );
+          const globalId = String(trajectHit.graphic.attributes.GlobalID ?? "").trim();
           if (!globalId) {
             return;
           }
 
-          const storedTraject = trajectByGlobalIdRef.current.get(globalId);
-          setDraftValues({
-            trajectCode:
-              storedTraject?.trajectCode ??
-              String(trajectHit.graphic.attributes.traject_code ?? ""),
-            status: storedTraject?.status ?? Number(trajectHit.graphic.attributes.status ?? 1),
-            opmerking:
-              storedTraject?.opmerking ??
-              String(trajectHit.graphic.attributes.opmerking ?? ""),
-          });
-          setZoomTargetGlobalId(null);
-          selectTraject(globalId, "map");
-          setAttributeDrawerOpen(true);
-          setEditingMode("attributes");
-        });
-
-        const createHandle = createdContext.sketchViewModel.on("create", (event) => {
-          const createdGraphic = event.graphic;
-
-          if (event.state === "complete" && createdGraphic?.geometry) {
-            setPendingGeometryEdits({
-              mode: "create",
-              geometry: createdGraphic.geometry,
-            });
-            setSelectedBorFeature(null);
-            setDraftValues(
-              toFormValues(null, createdContext.statusOptions[0]?.value ?? 1)
-            );
-            setEditingMode("attributes");
-            setAttributeDrawerOpen(true);
-          }
-
-          if (event.state === "complete") {
-            createdContext.sketchLayer.removeAll();
-          }
-        });
-
-        const updateHandle = createdContext.sketchViewModel.on("update", (event) => {
-          if (event.state === "complete" && event.graphics[0]?.geometry) {
-            setPendingGeometryEdits({
-              mode: "reshape",
-              geometry: event.graphics[0].geometry,
-            });
-            setSelectedBorFeature(null);
-            setEditingMode("attributes");
-            setAttributeDrawerOpen(true);
-          }
-
-          if (event.state === "complete" || event.aborted) {
-            createdContext.sketchLayer.removeAll();
-          }
+          selectJaarplanTraject(globalId, "map");
+          setDrawerOpen(true);
+          setAddFormOpen(false);
+          setDraftMeasure(null);
         });
 
         return () => {
           layerWatch.remove();
-          legendCollectionHandle.remove();
           viewStateWatch.remove();
-          mapClickHandle.remove();
-          createHandle.remove();
-          updateHandle.remove();
+          clickHandle.remove();
         };
       } catch (mapError) {
         setError(
           mapError instanceof Error
             ? mapError.message
-            : "Kaart kon niet worden geïnitialiseerd."
+            : "Nieuwe kaart kon niet worden geïnitialiseerd."
         );
       }
     }
@@ -534,96 +317,10 @@ export function MapPage() {
       void cleanupPromise?.then((cleanup) => cleanup?.());
       localContext?.view.destroy();
     };
-  }, [
-    selectTraject,
-    setAttributeDrawerOpen,
-    setEditingMode,
-    setPendingGeometryEdits,
-    setZoomTargetGlobalId,
-    setMapViewState,
-    setLayerVisibility,
-  ]);
+  }, [metadata, selectJaarplanTraject, setJaarplanMapViewState]);
 
   useEffect(() => {
-    if (!mapContext?.view || !selectedGlobalId) {
-      highlightRef.current?.remove();
-      return;
-    }
-
-    let active = true;
-    const currentContext = mapContext;
-    const currentGlobalId = selectedGlobalId;
-
-    async function syncSelection() {
-      const layerView = (await currentContext.view.whenLayerView(
-        currentContext.trajectLayer
-      )) as FeatureLayerView;
-      const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
-        currentContext.trajectLayer,
-        currentGlobalId
-      );
-
-      if (!active || !graphic) {
-        return;
-      }
-
-      highlightRef.current?.remove();
-      highlightRef.current = layerView.highlight(graphic);
-
-      if (zoomTargetGlobalId === currentGlobalId && graphic.geometry) {
-        await currentContext.view.goTo(
-          { target: graphic.geometry },
-          { duration: 700 }
-        );
-        setZoomTargetGlobalId(null);
-      }
-    }
-
-    void syncSelection();
-
-    return () => {
-      active = false;
-    };
-  }, [mapContext, selectedGlobalId, setZoomTargetGlobalId, zoomTargetGlobalId]);
-
-  useEffect(() => {
-    if (!mapContext) {
-      return;
-    }
-
-    const currentContext = mapContext;
-    let active = true;
-
-    async function syncRenderer() {
-      await arcgisTrajectService.setTrajectRenderer(
-        currentContext.trajectLayer,
-        rendererMode,
-        currentContext.modelTypeOptions
-      );
-
-      if (!active) {
-        return;
-      }
-
-      setLegendItems(
-        arcgisTrajectService.extractLegendItems(currentContext.legendViewModel, {
-          rendererMode,
-          trajectLayerId: currentContext.trajectLayer.uid,
-          statusOptions: currentContext.statusOptions,
-          modelTypeOptions: currentContext.modelTypeOptions,
-        })
-      );
-    }
-
-    void syncRenderer();
-
-    return () => {
-      active = false;
-    };
-  }, [mapContext, rendererMode]);
-
-  useEffect(() => {
-    if (!mapContext) {
+    if (!mapContext?.view) {
       return;
     }
 
@@ -639,9 +336,13 @@ export function MapPage() {
         return;
       }
 
-      const objectIds = filteredTrajecten
+      const matchingTrajecten = trajecten.filter((traject) =>
+        filteredTrajectIds.includes(traject.globalId)
+      );
+      const objectIds = matchingTrajecten
         .map((traject) => traject.objectId)
         .filter((objectId) => Number.isFinite(objectId));
+
       layerView.filter = objectIds.length
         ? { where: `OBJECTID IN (${objectIds.join(",")})` }
         : { where: "1=0" };
@@ -652,157 +353,63 @@ export function MapPage() {
     return () => {
       active = false;
     };
-  }, [filteredTrajecten, mapContext]);
+  }, [filteredTrajectIds, mapContext, trajecten]);
 
-  async function handleSave(values: AttributeFormValues) {
+  useEffect(() => {
     if (!mapContext) {
       return;
     }
 
-    if (!trajectLayerEditingEnabled) {
-      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const preservedCenter = mapContext.view.center?.clone() ?? null;
-      const preservedZoom = mapContext.view.zoom;
-      const preservedRotation = mapContext.view.rotation;
-      setZoomTargetGlobalId(null);
-
-      if (pendingGeometryEdits?.mode === "create") {
-        const createdSpatial = await arcgisTrajectService.saveNewTraject(
-          mapContext.trajectLayer,
-          pendingGeometryEdits.geometry,
-          values
-        );
-        upsertTraject(createdSpatial);
-        selectTraject(createdSpatial.globalId, "map");
-      } else if (selectedTraject) {
-        const updatedSpatial = await arcgisTrajectService.updateTraject(
-          mapContext.trajectLayer,
-          selectedTraject,
-          values,
-          pendingGeometryEdits?.geometry
-        );
-        upsertTraject(updatedSpatial);
-        setDraftValues({
-          trajectCode: updatedSpatial.trajectCode,
-          status: updatedSpatial.status,
-          opmerking: updatedSpatial.opmerking,
-        });
-      }
-
-      if (preservedCenter) {
-        mapContext.view.center = preservedCenter;
-      }
-      if (typeof preservedZoom === "number") {
-        mapContext.view.zoom = preservedZoom;
-      }
-      if (typeof preservedRotation === "number") {
-        mapContext.view.rotation = preservedRotation;
-      }
-
-      setDraftValues(null);
-      setPendingGeometryEdits(null);
-      setEditingMode("idle");
-      setAttributeDrawerOpen(false);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Opslaan is mislukt.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handlePlanningUpdate(
-    workId: string,
-    updates: Partial<Omit<PlanningRegistration, "workId">>
-  ) {
-    const registration = await mockPlanningService.saveRegistration(workId, updates);
-    updatePlanningItem(workId, registration);
-  }
-
-  async function handleDeleteTraject() {
-    if (!mapContext || !selectedTraject) {
-      return;
-    }
-
-    if (!isNewTrajectGeometry(selectedTraject)) {
-      setError("Alleen nieuw ingetekende geometrieën mogen worden verwijderd.");
-      return;
-    }
-
-    setDeleting(true);
-    setError(null);
-
-    try {
-      await arcgisTrajectService.deleteTraject(mapContext.trajectLayer, selectedTraject);
-      highlightRef.current?.remove();
-      removeTraject(selectedTraject.globalId);
-      setSelectedBorFeature(null);
-      setDraftValues(null);
-      setPendingGeometryEdits(null);
-      setZoomTargetGlobalId(null);
-      setEditingMode("idle");
-      setAttributeDrawerOpen(false);
-      selectTraject(null, "map");
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error ? deleteError.message : "Verwijderen is mislukt."
-      );
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function startReshape() {
-    if (!mapContext || !selectedTraject) {
-      return;
-    }
-
-    if (!trajectLayerEditingEnabled) {
-      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
-      return;
-    }
-
-    const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
+    arcgisJaarplanService.updateTrajectStatusRenderer(
       mapContext.trajectLayer,
-      selectedTraject.globalId
+      trajectStatusById
     );
+  }, [mapContext, trajectStatusById]);
 
-    if (!graphic) {
-      setError("Geselecteerd traject kon niet worden gevonden voor shape-editing.");
+  useEffect(() => {
+    if (!mapContext?.view || !selectedTrajectId) {
+      highlightRef.current?.remove();
       return;
     }
 
-    mapContext.sketchLayer.removeAll();
-    const editableGraphic = graphic.clone();
-    mapContext.sketchLayer.add(editableGraphic);
-    setEditingMode("reshape");
-    setAttributeDrawerOpen(false);
-    mapContext.sketchViewModel.update([editableGraphic], { tool: "reshape" });
-  }
+    const currentContext = mapContext;
+    const currentSelectedTrajectId = selectedTrajectId;
+    let active = true;
 
-  function startCreate() {
-    if (!mapContext) {
-      return;
+    async function syncSelection() {
+      const layerView = (await currentContext.view.whenLayerView(
+        currentContext.trajectLayer
+      )) as FeatureLayerView;
+      const graphic = await arcgisJaarplanService.queryGraphicByGlobalId(
+        currentContext.trajectLayer,
+        currentSelectedTrajectId
+      );
+
+      if (!active || !graphic) {
+        return;
+      }
+
+      highlightRef.current?.remove();
+      highlightRef.current = layerView.highlight(graphic);
+
+      if (zoomTargetGlobalId === currentSelectedTrajectId && graphic.geometry) {
+        await currentContext.view.goTo({ target: graphic.geometry }, { duration: 700 });
+        setJaarplanZoomTargetGlobalId(null);
+      }
     }
 
-    if (!trajectLayerEditingEnabled) {
-      setError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
-      return;
-    }
+    void syncSelection();
 
-    setDraftValues(null);
-    selectTraject(null, "map");
-    setPendingGeometryEdits(null);
-    setEditingMode("create");
-    setAttributeDrawerOpen(false);
-    mapContext.sketchViewModel.create("polygon");
-  }
+    return () => {
+      active = false;
+    };
+  }, [mapContext, selectedTrajectId, setJaarplanZoomTargetGlobalId, zoomTargetGlobalId]);
+
+  useEffect(() => {
+    if (selectedTraject) {
+      setDrawerOpen(true);
+    }
+  }, [selectedTraject]);
 
   function toggleLayer(id: string, visible: boolean) {
     if (!mapContext) {
@@ -815,194 +422,369 @@ export function MapPage() {
 
     if (item) {
       item.visible = visible;
-      setLayerVisibility(item.title, visible);
     }
   }
 
+  function updateDraftMeasure(field: keyof JaarplanMeasureFormValues, value: string) {
+    if (!metadata || !draftMeasure) {
+      return;
+    }
+
+    const nextValues = {
+      ...draftMeasure,
+      [field]: value,
+    } as JaarplanMeasureFormValues;
+
+    if (field === "regimeValue" || field === "werkzaamhedenValue") {
+      setDraftMeasure(
+        arcgisJaarplanService.syncSubtypeValues(
+          metadata,
+          nextValues,
+          field === "regimeValue" ? "regimeValue" : "werkzaamhedenValue"
+        )
+      );
+      return;
+    }
+
+    setDraftMeasure(nextValues);
+  }
+
+  async function handleCreateMeasure() {
+    if (!metadata || !selectedTraject || !draftMeasure) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const createdMeasure = await arcgisJaarplanService.createMeasure(
+        draftMeasure,
+        metadata,
+        trajecten
+      );
+      upsertJaarplanMeasure(createdMeasure);
+      setAddFormOpen(false);
+      setDraftMeasure(arcgisJaarplanService.createDefaultFormValues(metadata, selectedTraject));
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error ? saveError.message : "Maatregel opslaan is mislukt."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const draftToelichting = useMemo(() => {
+    if (!metadata || !draftMeasure) {
+      return "";
+    }
+
+    return arcgisJaarplanService.getMeasureToelichtingLabel(
+      metadata,
+      draftMeasure.regimeValue,
+      draftMeasure.toelichtingValue
+    );
+  }, [draftMeasure, metadata]);
+
   return (
-    <div className="flex h-full min-h-0">
-      <MapSidebar
-        layers={layerItems}
-        legend={legendItems}
-        countsByStatus={countsByStatus}
-        totalTrajecten={filteredTrajecten.length}
-        objectCountMax={mapFilters.objectCountMax}
-        availableTypeCoderingen={availableTypeCoderingen}
-        statusOptions={statusOptions}
-        selectedTypeCoderingen={mapFilters.typeCoderingen}
-        selectedStatuses={mapFilters.statuses}
-        selectedBronlagen={mapFilters.bronlagen}
-        onlyNewGeometry={mapFilters.onlyNewGeometry}
-        onObjectCountMaxChange={(value) =>
-          setMapFilters((current) => ({
-            ...current,
-            objectCountMax: value,
-          }))
-        }
-        onToggleTypeCodering={(value) =>
-          setMapFilters((current) => ({
-            ...current,
-            typeCoderingen: toggleInList(current.typeCoderingen, value).sort((left, right) =>
-              left.localeCompare(right, "nl")
-            ),
-          }))
-        }
-        onToggleStatus={(value) =>
-          setMapFilters((current) => ({
-            ...current,
-            statuses: toggleInList(current.statuses, value).sort((left, right) => left - right),
-          }))
-        }
-        onToggleBronlaag={(value) =>
-          setMapFilters((current) => ({
-            ...current,
-            bronlagen: toggleInList(current.bronlagen, value),
-          }))
-        }
-        onToggleOnlyNewGeometry={() =>
-          setMapFilters((current) => ({
-            ...current,
-            onlyNewGeometry: !current.onlyNewGeometry,
-          }))
-        }
-        onClearFilters={() => setMapFilters(DEFAULT_MAP_FILTERS)}
-      />
+    <div className="relative h-full min-h-0">
+      <div ref={mapRef} className="h-full w-full bg-surfaceAlt" />
 
-      <section className="relative min-h-0 flex-1">
-        <div ref={mapRef} className="h-full w-full bg-surfaceAlt" />
+      {mapContext ? (
+        <>
+          <div className="glass-panel absolute left-3 top-20 z-20 rounded-[10px] p-2">
+            <Button
+              variant={layerPanelOpen ? "secondary" : "outline"}
+              className="h-9 w-9 px-0"
+              onClick={() => setLayerPanelOpen((current) => !current)}
+              aria-label="Kaartlagen"
+              title="Kaartlagen"
+            >
+              <Layers3 className="h-4 w-4" />
+            </Button>
+          </div>
 
-        {mapContext ? (
-          <>
-            <div className="glass-panel absolute left-3 top-20 z-20 rounded-[10px] p-2">
-              <Button
-                variant={layerPanelOpen ? "secondary" : "outline"}
-                className="h-9 w-9 px-0"
-                onClick={() => setLayerPanelOpen((current) => !current)}
-                aria-label="Kaartlagen"
-                title="Kaartlagen"
-              >
-                <Layers3 className="h-4 w-4" />
-              </Button>
-            </div>
-            {layerPanelOpen ? (
-              <div className="glass-panel absolute left-3 top-32 z-20 w-[260px] rounded-card p-3">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[12px] font-semibold text-text">Kaartlagen</div>
-                  <Button
-                    variant="ghost"
-                    className="h-8 w-8 px-0"
-                    onClick={() => setLayerPanelOpen(false)}
-                    aria-label="Sluit lagenpaneel"
+          {layerPanelOpen ? (
+            <div className="glass-panel absolute left-3 top-32 z-20 w-[280px] rounded-card p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-[12px] font-semibold text-text">Kaartlagen</div>
+                <Button
+                  variant="ghost"
+                  className="h-8 w-8 px-0"
+                  onClick={() => setLayerPanelOpen(false)}
+                  aria-label="Sluit lagenpaneel"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {layerItems.map((layer) => (
+                  <div
+                    key={layer.id}
+                    className="flex items-center gap-3 rounded-md border border-border bg-surfaceAlt/80 px-3 py-2"
                   >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {layerItems.map((layer) => (
-                    <div
-                      key={layer.id}
-                      className="flex items-center gap-3 rounded-md border border-border bg-surfaceAlt/80 px-3 py-2"
-                    >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-accentSoft text-accentStrong">
-                        <Layers3 className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[12px] text-text">{layer.title}</div>
-                        <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
-                          {layer.type}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className={`rounded-full px-2 py-1 text-[10px] font-semibold transition ${
-                          layer.visible
-                            ? "bg-accentSoft text-accentStrong"
-                            : "bg-surface text-textMuted"
-                        }`}
-                        onClick={() => toggleLayer(layer.id, !layer.visible)}
-                      >
-                        {layer.visible ? "Aan" : "Uit"}
-                      </button>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-accentSoft text-accentStrong">
+                      <Layers3 className="h-4 w-4" />
                     </div>
-                  ))}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] text-text">{layer.title}</div>
+                      <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                        {layer.type}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`rounded-full px-2 py-1 text-[10px] font-semibold transition ${
+                        layer.visible
+                          ? "bg-accentSoft text-accentStrong"
+                          : "bg-surface text-textMuted"
+                      }`}
+                      onClick={() => toggleLayer(layer.id, !layer.visible)}
+                    >
+                      {layer.visible ? "Aan" : "Uit"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <BasemapSwitcher
+            basemaps={mapContext.basemapOptions}
+            activeId={activeBasemapId}
+            onSelect={(id) => {
+              const basemap = mapContext.basemapOptions.find((option) => option.id === id);
+              if (!basemap) {
+                return;
+              }
+
+              setActiveBasemapId(id);
+              mapContext.map.basemap = basemap.basemap;
+            }}
+          />
+
+          <div className="absolute right-3 top-20 z-20 w-[420px] max-w-[calc(100vw-24px)]">
+            <JaarplanFilterPanel
+              mode="compact"
+              filters={sharedFilters}
+              options={selectFilterOptions}
+              activeFilterCount={activeFilterCount}
+              onFilterChange={handleSharedFilterChange}
+              onReset={resetJaarplanFilters}
+            />
+          </div>
+
+          <div className="glass-panel absolute bottom-3 left-3 z-20 w-[320px] rounded-card p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accentStrong">
+              Actieve lagen
+            </div>
+            <div className="mt-3 text-[11px] text-textMuted">
+              {filteredTrajectIds.length} trajecten zichtbaar op basis van de huidige filters
+            </div>
+            <div className="mt-3 space-y-2">
+              {activeLegendLayers.map((layer) => (
+                <div
+                  key={layer.id}
+                  className="flex items-center gap-2 rounded-md bg-surfaceAlt/80 px-2 py-1.5"
+                >
+                  <span className="h-2.5 w-2.5 rounded-[3px] border border-black/5 bg-accentSoft" />
+                  <span className="text-[11px] text-textDim">{layer.title}</span>
+                </div>
+              ))}
+            </div>
+            {trajectLayerVisible ? (
+              <div className="mt-4 border-t border-border/70 pt-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Status traject
+                </div>
+                <div className="mt-2 grid gap-2">
+                  {MAP_STATUS_LEGEND_ORDER.map((status) => {
+                    const palette = getMaatregelStatusPalette(status);
+                    return (
+                      <div
+                        key={status}
+                        className="flex items-center gap-2 rounded-md bg-surfaceAlt/80 px-2 py-1.5"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: palette.mapColor }}
+                        />
+                        <span className="text-[11px] text-textDim">{palette.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
-            <BasemapSwitcher
-              basemaps={mapContext.basemapOptions}
-              activeId={activeBasemapId}
-              onSelect={(id) => {
-                const basemap = mapContext.basemapOptions.find((option) => option.id === id);
-                if (!basemap) {
-                  return;
-                }
-
-                setActiveBasemapId(id);
-                mapContext.map.basemap = basemap.basemap;
-              }}
-            />
-            <MapToolbar
-              disabledAdd={!trajectLayerEditingEnabled}
-              disabledEdit={!selectedTraject || !trajectLayerEditingEnabled}
-              disabledReason={
-                !trajectLayerEditingEnabled
-                  ? TRAJECT_LAYER_EDITING_DISABLED_MESSAGE
-                  : !selectedTraject
-                    ? "Selecteer eerst een traject om de vorm aan te passen."
-                    : undefined
-              }
-              rendererMode={rendererMode}
-              onAddTraject={startCreate}
-              onEditShape={() => {
-                void startReshape();
-              }}
-              onRendererModeChange={setRendererMode}
-            />
-            <AiAssistantOverlay view={mapContext.view} />
-          </>
-        ) : (
-          <div className="glass-panel absolute left-3 top-3 z-20 rounded-card px-3 py-2 text-[12px] text-textDim">
-            <div className="flex items-center gap-2">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              Kaart laden...
-            </div>
           </div>
-        )}
+        </>
+      ) : (
+        <div className="glass-panel absolute left-3 top-3 z-20 rounded-card px-3 py-2 text-[12px] text-textDim">
+          <div className="flex items-center gap-2">
+            {jaarplanError ? (
+              <>
+                <AlertTriangle className="h-4 w-4 text-danger" />
+                Jaarplankaart kon niet laden
+              </>
+            ) : (
+              <>
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                {jaarplanLoading ? "Jaarplankaart laden..." : "Jaarplan initialiseren..."}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
-        {error ? (
-          <div className="glass-panel absolute bottom-3 left-3 z-20 max-w-md rounded-card px-4 py-3 text-[12px] text-danger">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
+      {error ? (
+        <div className="glass-panel absolute bottom-3 right-3 z-20 max-w-md rounded-card px-4 py-3 text-[12px] text-danger">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        </div>
+      ) : null}
+
+      <Drawer
+        open={drawerOpen}
+        onOpenChange={(open) => {
+          setDrawerOpen(open);
+          if (!open) {
+            setAddFormOpen(false);
+            setDraftMeasure(null);
+          }
+        }}
+        title={selectedTraject?.trajectCode || "Jaarplan traject"}
+      >
+        {selectedTraject && metadata ? (
+          <div className="space-y-5 p-5">
+            <section className="rounded-card border border-border bg-surfaceAlt p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                Traject
+              </div>
+              <div className="mt-3 grid gap-3 text-[12px] text-text md:grid-cols-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                    Trajectcode
+                  </div>
+                  <div className="mt-1 font-medium">{selectedTraject.trajectCode || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                    Uitvoerder onderhoud
+                  </div>
+                  <div className="mt-1">{selectedTraject.uitvoerderOnderhoud || "—"}</div>
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    selectJaarplanTraject(selectedTraject.globalId, "table");
+                    navigate("/jaarplan");
+                  }}
+                >
+                  <MapPinned className="h-3.5 w-3.5" />
+                  Open in jaarplan
+                </Button>
+                <Button
+                  type="button"
+                  variant={addFormOpen ? "secondary" : "default"}
+                  className="px-4 py-2"
+                  onClick={() => {
+                    setAddFormOpen((current) => !current);
+                    setDraftMeasure((current) =>
+                      current ??
+                      arcgisJaarplanService.createDefaultFormValues(metadata, selectedTraject)
+                    );
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Maatregel toevoegen
+                </Button>
+              </div>
+            </section>
+
+            {addFormOpen && draftMeasure ? (
+              <section className="rounded-card border border-border bg-white p-4">
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Nieuwe maatregel
+                </div>
+                <MaatregelForm
+                  layout="compact"
+                  values={draftMeasure}
+                  metadata={metadata}
+                  steekproefStatusOptions={arcgisJaarplanService.steekproefStatusOptions}
+                  toelichtingText={draftToelichting}
+                  submitLabel="Maatregel opslaan"
+                  saving={saving}
+                  onFieldChange={updateDraftMeasure}
+                  onSubmit={() => {
+                    void handleCreateMeasure();
+                  }}
+                />
+              </section>
+            ) : null}
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Geplande maatregelen
+                </div>
+                <div className="text-[11px] text-textMuted">{selectedMeasures.length} zichtbaar</div>
+              </div>
+
+              {!selectedMeasures.length ? (
+                <div className="rounded-card border border-border bg-surfaceAlt p-4 text-[12px] text-textDim">
+                  Voor dit traject zijn binnen de huidige filters geen maatregelen zichtbaar.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {selectedMeasures.map((measure) => (
+                    <div
+                      key={measure.globalId}
+                      className="rounded-card border border-border bg-surfaceAlt/70 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <RegimeBadge
+                              regimeLabel={measure.regimeLabel}
+                              regimeNumber={measure.regimeNumber}
+                            />
+                            <MaatregelStatusBadge
+                              status={measure.statusMaatregel}
+                              compact
+                            />
+                            <MeasureSignals measure={measure} />
+                          </div>
+                          <div className="text-[13px] font-semibold text-text">
+                            {measure.werkzaamheidLabel}
+                          </div>
+                          <div className="text-[11px] leading-5 text-textDim">
+                            {measure.toelichtingLabel}
+                          </div>
+                        </div>
+                        <div className="rounded-card border border-border bg-white px-3 py-2 text-right">
+                          <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                            Werkperiode
+                          </div>
+                          <div className="mt-1 text-[12px] font-medium text-text">
+                            {formatWerkperiodeLabel(measure)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         ) : null}
-
-        <AttributeDrawer
-          open={attributeDrawerOpen}
-          onOpenChange={(open) => {
-            setAttributeDrawerOpen(open);
-            if (!open) {
-              setSelectedBorFeature(null);
-            }
-            if (!open && pendingGeometryEdits?.mode === "create") {
-              setDraftValues(null);
-              setPendingGeometryEdits(null);
-              setEditingMode("idle");
-            }
-          }}
-          selectedTraject={selectedTraject}
-          selectedBorFeature={selectedBorFeature}
-          defaultValues={defaultFormValues}
-          statusOptions={mapContext?.statusOptions ?? []}
-          planningItems={planningItems}
-          saving={saving}
-          deleting={deleting}
-          onSubmit={handleSave}
-          onDeleteTraject={handleDeleteTraject}
-          onPlanningUpdate={handlePlanningUpdate}
-        />
-      </section>
+      </Drawer>
     </div>
   );
 }
