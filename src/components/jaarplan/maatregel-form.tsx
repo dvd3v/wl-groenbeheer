@@ -3,13 +3,17 @@ import type {
   JaarplanMetadata,
   SteekproefStatus,
 } from "../../types/app";
+import {
+  getCheckboxValue,
+  getWerkzaamheidGroups,
+  isCheckedJaNeeValue,
+  WERKZAAMHEID_SELECTION_SEPARATOR,
+} from "../../lib/jaarplan-measure-utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
-
-const WERKZAAMHEID_SELECTION_SEPARATOR = "::";
 
 interface MaatregelFormProps {
   values: JaarplanMeasureFormValues;
@@ -34,55 +38,6 @@ function getRangeTargetValue(
   const nextOption = options[currentIndex + 1] ?? options[currentIndex - 1] ?? null;
 
   return nextOption?.value ?? currentValue;
-}
-
-function getWerkzaamheidGroups(metadata: JaarplanMetadata) {
-  return metadata.regimeOptions
-    .map((regimeOption) => {
-      const subtypeConfig = metadata.subtypeConfigsByRegime[regimeOption.value];
-      if (!subtypeConfig?.werkzaamhedenOptions.length) {
-        return null;
-      }
-
-      return {
-        regimeValue: regimeOption.value,
-        regimeLabel: regimeOption.label,
-        options: subtypeConfig.werkzaamhedenOptions,
-      };
-    })
-    .filter(Boolean) as Array<{
-    regimeValue: string;
-    regimeLabel: string;
-    options: JaarplanMetadata["subtypeConfigsByRegime"][string]["werkzaamhedenOptions"];
-  }>;
-}
-
-function normalizeJaNeeToken(value: string | number | null | undefined): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function getCheckboxValue(
-  options: JaarplanMetadata["jaNeeOptions"],
-  checked: boolean
-): string {
-  const matcher = checked
-    ? (option: JaarplanMetadata["jaNeeOptions"][number]) =>
-        normalizeJaNeeToken(option.rawValue) === "1" ||
-        normalizeJaNeeToken(option.rawValue) === "ja" ||
-        normalizeJaNeeToken(option.label) === "ja"
-    : (option: JaarplanMetadata["jaNeeOptions"][number]) =>
-        normalizeJaNeeToken(option.rawValue) === "0" ||
-        normalizeJaNeeToken(option.rawValue) === "nee" ||
-        normalizeJaNeeToken(option.label) === "nee";
-
-  return options.find(matcher)?.value ?? (checked ? "1" : "0");
-}
-
-function isCheckedJaNeeValue(
-  options: JaarplanMetadata["jaNeeOptions"],
-  value: string
-): boolean {
-  return value === getCheckboxValue(options, true);
 }
 
 export function MaatregelForm({

@@ -8,9 +8,9 @@
   :root {
     color: #1a1d2a;
     background:
-      radial-gradient(circle at 0% 0%, rgba(41, 182, 194, 0.12), transparent 28%),
-      radial-gradient(circle at 100% 0%, rgba(124, 58, 237, 0.07), transparent 24%),
-      #f5f6f8;
+      radial-gradient(circle at 0% 0%, rgba(41, 182, 194, 0.16), transparent 28%),
+      radial-gradient(circle at 100% 0%, rgba(245, 158, 11, 0.08), transparent 26%),
+      linear-gradient(180deg, #f8fbfc 0%, #eef2f4 100%);
     font-family: "DM Sans", system-ui, sans-serif;
   }
 
@@ -26,6 +26,7 @@
 
   body {
     @apply m-0 bg-bg bg-page-glow text-text antialiased;
+    background-attachment: fixed;
   }
 
   button,
@@ -33,6 +34,11 @@
   select,
   textarea {
     font: inherit;
+  }
+
+  ::selection {
+    background: rgba(41, 182, 194, 0.22);
+    color: #0f172a;
   }
 }
 
@@ -53,6 +59,10 @@
   }
 
   .glass-panel {
-    @apply border border-white/60 bg-white/90 shadow-panel backdrop-blur;
+    @apply border border-white/70 bg-white shadow-panel backdrop-blur;
+    background-color: rgba(255, 255, 255, 0.92);
+    box-shadow:
+      0 20px 48px rgba(15, 23, 42, 0.08),
+      0 4px 18px rgba(15, 23, 42, 0.05);
   }
 }

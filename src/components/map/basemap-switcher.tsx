@@ -1,4 +1,4 @@
-import type { BasemapOption } from "../../services/arcgis-traject-service";
+import type { BasemapOption } from "../../services/arcgis-map-config";
 import { cn } from "../../lib/cn";
 
 interface BasemapSwitcherProps {

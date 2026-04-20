@@ -1,46 +1,40 @@
 import * as reactiveUtils from "@arcgis/core/core/reactiveUtils.js";
+import FeatureEffect from "@arcgis/core/layers/support/FeatureEffect.js";
+import FeatureFilter from "@arcgis/core/layers/support/FeatureFilter.js";
 import type FeatureLayerView from "@arcgis/core/views/layers/FeatureLayerView.js";
-import {
-  AlertTriangle,
-  Layers3,
-  LoaderCircle,
-  MapPinned,
-  Plus,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Layers3, LoaderCircle, MapPinned } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { JaarplanFilterPanel } from "../components/jaarplan/jaarplan-filter-panel";
-import { MaatregelForm } from "../components/jaarplan/maatregel-form";
-import {
-  MeasureSignals,
-  MaatregelStatusBadge,
-  getMaatregelStatusPalette,
-  RegimeBadge,
-} from "../components/jaarplan/maatregel-badges";
+import { RelatedMeasuresTableEditor } from "../components/jaarplan/related-measures-table-editor";
+import { getMaatregelStatusPalette } from "../components/jaarplan/maatregel-badges";
 import { BasemapSwitcher } from "../components/map/basemap-switcher";
+import { JaarplanAnalysisPanel } from "../components/map/jaarplan-analysis-panel";
 import { Button } from "../components/ui/button";
 import { Drawer } from "../components/ui/drawer";
-import { arcgisJaarplanService, type JaarplanMapContext } from "../services/arcgis-jaarplan-service";
+import {
+  arcgisJaarplanService,
+  type JaarplanMapContext,
+} from "../services/arcgis-jaarplan-service";
 import {
   formatWerkperiodeLabel,
   getAggregatedMaatregelStatus,
   getFilteredJaarplanGroups,
 } from "../lib/jaarplan-filtering";
+import {
+  getMeasuresInTimeWindow,
+  getTimeWindowLabel,
+  normalizeTimeWindow,
+} from "../lib/jaarplan-measure-utils";
 import { useAppStore } from "../store/app-store";
 import type {
   JaarplanMeasureFormValues,
+  JaarplanMeasureRecord,
+  JaarplanTimeWindow,
   LayerToggleItem,
   MaatregelStatus,
   MapViewState,
 } from "../types/app";
-
-function toSelectOptions(values: string[]) {
-  return [...new Set(values)]
-    .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right, "nl"))
-    .map((value) => ({ value, label: value }));
-}
 
 const MAP_STATUS_LEGEND_ORDER: MaatregelStatus[] = [
   "uitgevoerd",
@@ -50,11 +44,40 @@ const MAP_STATUS_LEGEND_ORDER: MaatregelStatus[] = [
   "geen_status",
 ];
 
+function toSelectOptions(values: string[]) {
+  return [...new Set(values)]
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right, "nl"))
+    .map((value) => ({ value, label: value }));
+}
+
+function resolvePlanningWindow(
+  metadata: ReturnType<typeof useAppStore.getState>["jaarplanMetadata"]
+): JaarplanTimeWindow {
+  const values = metadata?.werkperiodeOptions.map((option) => option.value) ?? [];
+  if (!values.length) {
+    return { start: "", end: "" };
+  }
+
+  return {
+    start: values[0],
+    end: values[values.length - 1],
+  };
+}
+
+function sanitizeSelectionIds(ids: string[]) {
+  return [...new Set(ids.map((value) => value.trim()).filter(Boolean))];
+}
+
 export function MapPage() {
   const navigate = useNavigate();
   const mapRef = useRef<HTMLDivElement | null>(null);
   const highlightRef = useRef<{ remove: () => void } | null>(null);
   const mapViewStateRef = useRef<MapViewState | null>(null);
+  const drawingSelectionRef = useRef(false);
+  const trajectenRef = useRef(useAppStore.getState().jaarplanTrajecten);
+  const filteredTrajectIdsRef = useRef<string[]>([]);
+  const applySelectionRef = useRef<(ids: string[], zoom?: boolean) => void>(() => undefined);
   const trajecten = useAppStore((state) => state.jaarplanTrajecten);
   const measures = useAppStore((state) => state.jaarplanMeasures);
   const metadata = useAppStore((state) => state.jaarplanMetadata);
@@ -72,16 +95,22 @@ export function MapPage() {
   );
   const setJaarplanMapViewState = useAppStore((state) => state.setJaarplanMapViewState);
   const upsertJaarplanMeasure = useAppStore((state) => state.upsertJaarplanMeasure);
+  const removeJaarplanMeasure = useAppStore((state) => state.removeJaarplanMeasure);
 
   const [mapContext, setMapContext] = useState<JaarplanMapContext | null>(null);
   const [layerItems, setLayerItems] = useState<LayerToggleItem[]>([]);
   const [activeBasemapId, setActiveBasemapId] = useState("light");
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [addFormOpen, setAddFormOpen] = useState(false);
-  const [draftMeasure, setDraftMeasure] = useState<JaarplanMeasureFormValues | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectionIds, setSelectionIds] = useState<string[]>([]);
+  const [relatedMeasures, setRelatedMeasures] = useState<JaarplanMeasureRecord[]>([]);
+  const [relatedMeasuresLoading, setRelatedMeasuresLoading] = useState(false);
+  const [relatedMeasuresError, setRelatedMeasuresError] = useState<string | null>(null);
+  const [savingNewMeasure, setSavingNewMeasure] = useState(false);
+  const [savingMeasureId, setSavingMeasureId] = useState<string | null>(null);
+  const [deletingMeasureId, setDeletingMeasureId] = useState<string | null>(null);
+  const [timeWindow, setTimeWindow] = useState<JaarplanTimeWindow>({ start: "", end: "" });
 
   const selectFilterOptions = useMemo(() => {
     return {
@@ -130,13 +159,22 @@ export function MapPage() {
     () => filteredGroups.map((group) => group.traject.globalId),
     [filteredGroups]
   );
+  const filteredTrajectIdSet = useMemo(
+    () => new Set(filteredTrajectIds),
+    [filteredTrajectIds]
+  );
+  const selectionIdSet = useMemo(() => new Set(selectionIds), [selectionIds]);
+  const selectedTrajects = useMemo(
+    () => trajecten.filter((traject) => selectionIdSet.has(traject.globalId)),
+    [selectionIdSet, trajecten]
+  );
   const selectedTraject = useMemo(
-    () => trajecten.find((traject) => traject.globalId === selectedTrajectId) ?? null,
-    [selectedTrajectId, trajecten]
+    () => (selectionIds.length === 1 ? selectedTrajects[0] ?? null : null),
+    [selectedTrajects, selectionIds]
   );
   const selectedMeasures = useMemo(
-    () => filteredGroups.find((group) => group.traject.globalId === selectedTrajectId)?.measures ?? [],
-    [filteredGroups, selectedTrajectId]
+    () => measures.filter((measure) => selectionIdSet.has(measure.trajectGlobalId)),
+    [measures, selectionIdSet]
   );
   const activeFilterCount = useMemo(
     () =>
@@ -151,7 +189,7 @@ export function MapPage() {
         (layer) =>
           layer.visible &&
           layer.title !== "BOR objectlagen" &&
-          layer.title !== "Jaarplan Maatregelen"
+          layer.title !== "Analyse selectie"
       ),
     [layerItems]
   );
@@ -168,6 +206,40 @@ export function MapPage() {
       ),
     [filteredGroups]
   );
+  const selectionStatusBreakdown = useMemo(
+    () =>
+      MAP_STATUS_LEGEND_ORDER.map((status) => ({
+        status,
+        count: selectedMeasures.filter((measure) => measure.statusMaatregel === status).length,
+      })).filter((item) => item.count > 0),
+    [selectedMeasures]
+  );
+  const visiblePlanningTrajecten = useMemo(
+    () => trajecten.filter((traject) => filteredTrajectIdSet.has(traject.globalId)),
+    [filteredTrajectIdSet, trajecten]
+  );
+  const visiblePlanningMeasures = useMemo(
+    () => measures.filter((measure) => filteredTrajectIdSet.has(measure.trajectGlobalId)),
+    [filteredTrajectIdSet, measures]
+  );
+  const planningMeasures = useMemo(
+    () =>
+      metadata
+        ? getMeasuresInTimeWindow(visiblePlanningMeasures, metadata, timeWindow)
+        : [],
+    [metadata, timeWindow, visiblePlanningMeasures]
+  );
+  const planningTrajectCount = useMemo(
+    () => new Set(planningMeasures.map((measure) => measure.trajectGlobalId)).size,
+    [planningMeasures]
+  );
+  const planningWindowLabel = useMemo(
+    () =>
+      metadata
+        ? getTimeWindowLabel(metadata, timeWindow)
+        : "Planningvenster",
+    [metadata, timeWindow]
+  );
 
   function handleSharedFilterChange<K extends keyof typeof sharedFilters>(
     key: K,
@@ -176,9 +248,66 @@ export function MapPage() {
     setJaarplanFilters({ [key]: value } as Partial<typeof sharedFilters>);
   }
 
+  function applySelection(ids: string[], zoom = false) {
+    const nextIds = sanitizeSelectionIds(ids).filter((id) =>
+      trajecten.some((traject) => traject.globalId === id)
+    );
+
+    setSelectionIds(nextIds);
+
+    const singleId = nextIds.length === 1 ? nextIds[0] : null;
+    selectJaarplanTraject(singleId, "map");
+
+    if (singleId) {
+      setDrawerOpen(true);
+      if (zoom) {
+        setJaarplanZoomTargetGlobalId(singleId);
+      }
+    } else {
+      setDrawerOpen(false);
+      if (zoom) {
+        setJaarplanZoomTargetGlobalId(null);
+      }
+    }
+  }
+
+  useEffect(() => {
+    applySelectionRef.current = applySelection;
+  });
+
+  useEffect(() => {
+    trajectenRef.current = trajecten;
+  }, [trajecten]);
+
+  useEffect(() => {
+    filteredTrajectIdsRef.current = filteredTrajectIds;
+  }, [filteredTrajectIds]);
+
   useEffect(() => {
     mapViewStateRef.current = jaarplanMapViewState;
   }, [jaarplanMapViewState]);
+
+  useEffect(() => {
+    if (!metadata) {
+      return;
+    }
+
+    setTimeWindow((current) => {
+      const fallback = resolvePlanningWindow(metadata);
+      if (!current.start || !current.end) {
+        return fallback;
+      }
+
+      return normalizeTimeWindow(metadata, current);
+    });
+  }, [metadata]);
+
+  useEffect(() => {
+    if (selectedTrajectId && (selectionIds.length !== 1 || selectionIds[0] !== selectedTrajectId)) {
+      setSelectionIds([selectedTrajectId]);
+      setDrawerOpen(true);
+    }
+  }, [selectedTrajectId, selectionIds]);
 
   useEffect(() => {
     if (!metadata || !mapRef.current) {
@@ -269,36 +398,81 @@ export function MapPage() {
         );
 
         const clickHandle = createdContext.view.on("click", async (event) => {
+          if (drawingSelectionRef.current) {
+            return;
+          }
+
           const hitTest = await createdContext.view.hitTest(event);
           const trajectHit = hitTest.results.find(
             (result) =>
-              "graphic" in result && result.graphic.layer === createdContext.trajectLayer
+              "graphic" in result &&
+              (result.graphic.layer === createdContext.trajectLayer ||
+                result.graphic.layer === createdContext.planningLayer)
           );
 
           if (!trajectHit || !("graphic" in trajectHit)) {
             highlightRef.current?.remove();
-            selectJaarplanTraject(null, "map");
-            setDrawerOpen(false);
-            setAddFormOpen(false);
-            setDraftMeasure(null);
+            applySelectionRef.current([]);
+            setRelatedMeasures([]);
             return;
           }
 
-          const globalId = String(trajectHit.graphic.attributes.GlobalID ?? "").trim();
+          const attributes = trajectHit.graphic.attributes as Record<string, unknown>;
+          const globalId = String(
+            attributes.trajectGlobalId ?? attributes.GlobalID ?? attributes.guid ?? ""
+          ).trim();
           if (!globalId) {
             return;
           }
 
-          selectJaarplanTraject(globalId, "map");
-          setDrawerOpen(true);
-          setAddFormOpen(false);
-          setDraftMeasure(null);
+          applySelectionRef.current([globalId]);
+        });
+
+        const createHandle = createdContext.sketchViewModel.on("create", async (event) => {
+          if (event.state === "start") {
+            drawingSelectionRef.current = true;
+            return;
+          }
+
+          if (event.state === "complete" && event.graphic?.geometry) {
+            const candidateObjectIds = trajectenRef.current
+              .filter((traject) => filteredTrajectIdsRef.current.includes(traject.globalId))
+              .map((traject) => traject.objectId)
+              .filter((objectId) => Number.isFinite(objectId));
+
+            if (!candidateObjectIds.length) {
+              applySelectionRef.current([]);
+              return;
+            }
+
+            const featureSet = await createdContext.trajectLayer.queryFeatures({
+              geometry: event.graphic.geometry,
+              spatialRelationship: "intersects",
+              objectIds: candidateObjectIds,
+              outFields: ["GlobalID", "guid"],
+              returnGeometry: false,
+            });
+
+            const ids = featureSet.features
+              .map((feature) =>
+                String(feature.attributes.GlobalID ?? feature.attributes.guid ?? "").trim()
+              )
+              .filter(Boolean);
+
+            applySelectionRef.current(ids);
+          }
+
+          if (event.state === "complete" || event.state === "cancel") {
+            drawingSelectionRef.current = false;
+            createdContext.sketchLayer.removeAll();
+          }
         });
 
         return () => {
           layerWatch.remove();
           viewStateWatch.remove();
           clickHandle.remove();
+          createHandle.remove();
         };
       } catch (mapError) {
         setError(
@@ -317,7 +491,7 @@ export function MapPage() {
       void cleanupPromise?.then((cleanup) => cleanup?.());
       localContext?.view.destroy();
     };
-  }, [metadata, selectJaarplanTraject, setJaarplanMapViewState]);
+  }, [metadata, setJaarplanMapViewState]);
 
   useEffect(() => {
     if (!mapContext?.view) {
@@ -367,33 +541,60 @@ export function MapPage() {
   }, [mapContext, trajectStatusById]);
 
   useEffect(() => {
-    if (!mapContext?.view || !selectedTrajectId) {
-      highlightRef.current?.remove();
+    if (!mapContext?.view) {
       return;
     }
 
     const currentContext = mapContext;
-    const currentSelectedTrajectId = selectedTrajectId;
     let active = true;
 
     async function syncSelection() {
       const layerView = (await currentContext.view.whenLayerView(
         currentContext.trajectLayer
       )) as FeatureLayerView;
-      const graphic = await arcgisJaarplanService.queryGraphicByGlobalId(
-        currentContext.trajectLayer,
-        currentSelectedTrajectId
-      );
+      layerView.highlightOptions = {
+        color: [15, 118, 110, 1],
+        haloOpacity: 0.96,
+        fillOpacity: 0.2,
+      };
 
-      if (!active || !graphic) {
+      if (!active) {
         return;
       }
 
       highlightRef.current?.remove();
-      highlightRef.current = layerView.highlight(graphic);
 
-      if (zoomTargetGlobalId === currentSelectedTrajectId && graphic.geometry) {
-        await currentContext.view.goTo({ target: graphic.geometry }, { duration: 700 });
+      const selectedObjectIds = trajecten
+        .filter((traject) => selectionIds.includes(traject.globalId))
+        .map((traject) => traject.objectId)
+        .filter((objectId) => Number.isFinite(objectId));
+
+      if (!selectedObjectIds.length) {
+        currentContext.trajectLayer.featureEffect = null;
+        return;
+      }
+
+      currentContext.trajectLayer.featureEffect = new FeatureEffect({
+        filter: new FeatureFilter({
+          where: `OBJECTID IN (${selectedObjectIds.join(",")})`,
+        }),
+        includedEffect:
+          "brightness(1.15) saturate(1.15) drop-shadow(0px, 0px, 10px rgba(15, 118, 110, 0.28))",
+        excludedEffect: "grayscale(80%) opacity(26%)",
+      });
+
+      highlightRef.current = layerView.highlight(selectedObjectIds);
+
+      if (zoomTargetGlobalId && selectionIds.length === 1) {
+        const graphic = await arcgisJaarplanService.queryGraphicByGlobalId(
+          currentContext.trajectLayer,
+          zoomTargetGlobalId
+        );
+
+        if (graphic?.geometry) {
+          await currentContext.view.goTo({ target: graphic.geometry }, { duration: 700 });
+        }
+
         setJaarplanZoomTargetGlobalId(null);
       }
     }
@@ -403,13 +604,71 @@ export function MapPage() {
     return () => {
       active = false;
     };
-  }, [mapContext, selectedTrajectId, setJaarplanZoomTargetGlobalId, zoomTargetGlobalId]);
+  }, [
+    mapContext,
+    selectionIds,
+    setJaarplanZoomTargetGlobalId,
+    trajecten,
+    zoomTargetGlobalId,
+  ]);
 
   useEffect(() => {
-    if (selectedTraject) {
-      setDrawerOpen(true);
+    if (!mapContext || !metadata) {
+      return;
     }
-  }, [selectedTraject]);
+
+    arcgisJaarplanService.renderPlanningLayer(
+      mapContext.planningLayer,
+      visiblePlanningTrajecten,
+      visiblePlanningMeasures,
+      metadata,
+      timeWindow
+    );
+  }, [mapContext, metadata, timeWindow, visiblePlanningMeasures, visiblePlanningTrajecten]);
+
+  useEffect(() => {
+    if (!selectedTraject || !metadata) {
+      setRelatedMeasures([]);
+      setRelatedMeasuresLoading(false);
+      setRelatedMeasuresError(null);
+      return;
+    }
+
+    let active = true;
+    setRelatedMeasuresLoading(true);
+    setRelatedMeasuresError(null);
+
+    void arcgisJaarplanService
+      .queryRelatedMeasuresForTraject(
+        selectedTraject.globalId,
+        metadata,
+        trajecten,
+        mapContext?.trajectLayer
+      )
+      .then((items) => {
+        if (active) {
+          setRelatedMeasures(items);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setRelatedMeasuresError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Gerelateerde maatregelen konden niet worden geladen."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setRelatedMeasuresLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mapContext, metadata, selectedTraject, trajecten]);
 
   function toggleLayer(id: string, visible: boolean) {
     if (!mapContext) {
@@ -425,107 +684,219 @@ export function MapPage() {
     }
   }
 
-  function updateDraftMeasure(field: keyof JaarplanMeasureFormValues, value: string) {
-    if (!metadata || !draftMeasure) {
-      return;
-    }
-
-    const nextValues = {
-      ...draftMeasure,
-      [field]: value,
-    } as JaarplanMeasureFormValues;
-
-    if (field === "regimeValue" || field === "werkzaamhedenValue") {
-      setDraftMeasure(
-        arcgisJaarplanService.syncSubtypeValues(
-          metadata,
-          nextValues,
-          field === "regimeValue" ? "regimeValue" : "werkzaamhedenValue"
-        )
-      );
-      return;
-    }
-
-    setDraftMeasure(nextValues);
+  function focusTraject(globalId: string) {
+    applySelection([globalId], true);
   }
 
-  async function handleCreateMeasure() {
-    if (!metadata || !selectedTraject || !draftMeasure) {
+  function startRectangleSelection() {
+    if (!mapContext) {
       return;
     }
 
-    setSaving(true);
+    setError(null);
+    setDrawerOpen(false);
+    drawingSelectionRef.current = true;
+    mapContext.sketchLayer.removeAll();
+    mapContext.sketchViewModel.create("rectangle");
+  }
+
+  async function refreshSelectedRelatedMeasures() {
+    if (!selectedTraject || !metadata) {
+      return;
+    }
+
+    const items = await arcgisJaarplanService.queryRelatedMeasuresForTraject(
+      selectedTraject.globalId,
+      metadata,
+      trajecten,
+      mapContext?.trajectLayer
+    );
+    setRelatedMeasures(items);
+  }
+
+  async function handleCreateMeasure(values: JaarplanMeasureFormValues) {
+    if (!metadata) {
+      return;
+    }
+
+    setSavingNewMeasure(true);
     setError(null);
 
     try {
-      const createdMeasure = await arcgisJaarplanService.createMeasure(
-        draftMeasure,
-        metadata,
-        trajecten
-      );
+      const createdMeasure = await arcgisJaarplanService.createMeasure(values, metadata, trajecten);
       upsertJaarplanMeasure(createdMeasure);
-      setAddFormOpen(false);
-      setDraftMeasure(arcgisJaarplanService.createDefaultFormValues(metadata, selectedTraject));
+      await refreshSelectedRelatedMeasures();
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : "Maatregel opslaan is mislukt."
       );
     } finally {
-      setSaving(false);
+      setSavingNewMeasure(false);
     }
   }
 
-  const draftToelichting = useMemo(() => {
-    if (!metadata || !draftMeasure) {
-      return "";
+  async function handleSaveMeasure(
+    measure: JaarplanMeasureRecord,
+    values: JaarplanMeasureFormValues
+  ) {
+    if (!metadata) {
+      return;
     }
 
-    return arcgisJaarplanService.getMeasureToelichtingLabel(
-      metadata,
-      draftMeasure.regimeValue,
-      draftMeasure.toelichtingValue
+    setSavingMeasureId(measure.globalId);
+    setError(null);
+
+    try {
+      const updatedMeasure = await arcgisJaarplanService.saveMeasure(
+        measure.globalId,
+        values,
+        metadata,
+        trajecten
+      );
+      upsertJaarplanMeasure(updatedMeasure);
+      await refreshSelectedRelatedMeasures();
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Maatregel bijwerken is mislukt."
+      );
+    } finally {
+      setSavingMeasureId((current) => (current === measure.globalId ? null : current));
+    }
+  }
+
+  async function handleDeleteMeasure(measure: JaarplanMeasureRecord) {
+    if (!metadata) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Weet je zeker dat je "${measure.werkzaamheidLabel}" wilt verwijderen van traject ${measure.trajectCode}?`
     );
-  }, [draftMeasure, metadata]);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingMeasureId(measure.globalId);
+    setError(null);
+
+    try {
+      await arcgisJaarplanService.deleteMeasure(measure.globalId, metadata);
+      removeJaarplanMeasure(measure.globalId);
+      await refreshSelectedRelatedMeasures();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Maatregel verwijderen is mislukt."
+      );
+    } finally {
+      setDeletingMeasureId((current) => (current === measure.globalId ? null : current));
+    }
+  }
 
   return (
-    <div className="relative h-full min-h-0">
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#eef2f4]">
+      <div
+        className="absolute inset-0 opacity-80"
+        style={{
+          background:
+            "radial-gradient(circle at 0% 0%, rgba(41, 182, 194, 0.14), transparent 28%), radial-gradient(circle at 100% 100%, rgba(14, 116, 144, 0.1), transparent 26%)",
+        }}
+      />
       <div ref={mapRef} className="h-full w-full bg-surfaceAlt" />
 
       {mapContext ? (
         <>
-          <div className="glass-panel absolute left-3 top-20 z-20 rounded-[10px] p-2">
-            <Button
-              variant={layerPanelOpen ? "secondary" : "outline"}
-              className="h-9 w-9 px-0"
-              onClick={() => setLayerPanelOpen((current) => !current)}
-              aria-label="Kaartlagen"
-              title="Kaartlagen"
-            >
-              <Layers3 className="h-4 w-4" />
-            </Button>
+          <BasemapSwitcher
+            basemaps={mapContext.basemapOptions}
+            activeId={activeBasemapId}
+            onSelect={(id) => {
+              const basemap = mapContext.basemapOptions.find((option) => option.id === id);
+              if (!basemap) {
+                return;
+              }
+
+              setActiveBasemapId(id);
+              mapContext.map.basemap = basemap.basemap;
+            }}
+          />
+
+          <JaarplanAnalysisPanel
+            filteredTrajectCount={filteredTrajectIds.length}
+            selectedTrajects={selectedTrajects}
+            selectedMeasureCount={selectedMeasures.length}
+            planningTrajectCount={planningTrajectCount}
+            planningMeasureCount={planningMeasures.length}
+            timeWindow={timeWindow}
+            timeWindowLabel={planningWindowLabel}
+            werkperiodeOptions={
+              metadata?.werkperiodeOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              })) ?? []
+            }
+            statusBreakdown={selectionStatusBreakdown}
+            onTimeWindowChange={(partial) => {
+              if (!metadata) {
+                return;
+              }
+
+              setTimeWindow((current) =>
+                normalizeTimeWindow(metadata, { ...current, ...partial })
+              );
+            }}
+            onResetTimeWindow={() => {
+              if (metadata) {
+                setTimeWindow(resolvePlanningWindow(metadata));
+              }
+            }}
+            onStartRectangleSelection={startRectangleSelection}
+            onSelectFiltered={() => applySelection(filteredTrajectIds)}
+            onClearSelection={() => applySelection([])}
+            onFocusTraject={focusTraject}
+          />
+
+          <div className="absolute right-3 top-20 z-20 w-[420px] max-w-[calc(100vw-24px)]">
+            <JaarplanFilterPanel
+              mode="compact"
+              filters={sharedFilters}
+              options={selectFilterOptions}
+              activeFilterCount={activeFilterCount}
+              onFilterChange={handleSharedFilterChange}
+              onReset={resetJaarplanFilters}
+            />
           </div>
 
-          {layerPanelOpen ? (
-            <div className="glass-panel absolute left-3 top-32 z-20 w-[280px] rounded-card p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-[12px] font-semibold text-text">Kaartlagen</div>
-                <Button
-                  variant="ghost"
-                  className="h-8 w-8 px-0"
-                  onClick={() => setLayerPanelOpen(false)}
-                  aria-label="Sluit lagenpaneel"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+          <div className="glass-panel absolute bottom-3 left-3 z-20 w-[360px] rounded-[22px] border border-white/70 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accentStrong">
+                  Kaartlagen
+                </div>
+                <div className="mt-1 text-[12px] leading-5 text-textDim">
+                  {filteredTrajectIds.length} trajecten zichtbaar binnen de huidige filterset.
+                </div>
               </div>
+              <Button
+                variant={layerPanelOpen ? "secondary" : "outline"}
+                onClick={() => setLayerPanelOpen((current) => !current)}
+              >
+                <Layers3 className="h-3.5 w-3.5" />
+                {layerPanelOpen ? "Verberg" : "Toon"}
+              </Button>
+            </div>
 
-              <div className="space-y-2">
+            {layerPanelOpen ? (
+              <div className="mt-4 space-y-2">
                 {layerItems.map((layer) => (
                   <div
                     key={layer.id}
-                    className="flex items-center gap-3 rounded-md border border-border bg-surfaceAlt/80 px-3 py-2"
+                    className="flex items-center gap-3 rounded-[16px] border border-border bg-surfaceAlt/80 px-3 py-2"
                   >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-accentSoft text-accentStrong">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-accentSoft text-accentStrong">
                       <Layers3 className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -548,64 +919,32 @@ export function MapPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          ) : null}
+            ) : (
+              <div className="mt-4 space-y-2">
+                {activeLegendLayers.map((layer) => (
+                  <div
+                    key={layer.id}
+                    className="flex items-center gap-2 rounded-[14px] bg-surfaceAlt/80 px-3 py-2"
+                  >
+                    <span className="h-2.5 w-2.5 rounded-[3px] border border-black/5 bg-accentSoft" />
+                    <span className="text-[11px] text-textDim">{layer.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
-          <BasemapSwitcher
-            basemaps={mapContext.basemapOptions}
-            activeId={activeBasemapId}
-            onSelect={(id) => {
-              const basemap = mapContext.basemapOptions.find((option) => option.id === id);
-              if (!basemap) {
-                return;
-              }
-
-              setActiveBasemapId(id);
-              mapContext.map.basemap = basemap.basemap;
-            }}
-          />
-
-          <div className="absolute right-3 top-20 z-20 w-[420px] max-w-[calc(100vw-24px)]">
-            <JaarplanFilterPanel
-              mode="compact"
-              filters={sharedFilters}
-              options={selectFilterOptions}
-              activeFilterCount={activeFilterCount}
-              onFilterChange={handleSharedFilterChange}
-              onReset={resetJaarplanFilters}
-            />
-          </div>
-
-          <div className="glass-panel absolute bottom-3 left-3 z-20 w-[320px] rounded-card p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accentStrong">
-              Actieve lagen
-            </div>
-            <div className="mt-3 text-[11px] text-textMuted">
-              {filteredTrajectIds.length} trajecten zichtbaar op basis van de huidige filters
-            </div>
-            <div className="mt-3 space-y-2">
-              {activeLegendLayers.map((layer) => (
-                <div
-                  key={layer.id}
-                  className="flex items-center gap-2 rounded-md bg-surfaceAlt/80 px-2 py-1.5"
-                >
-                  <span className="h-2.5 w-2.5 rounded-[3px] border border-black/5 bg-accentSoft" />
-                  <span className="text-[11px] text-textDim">{layer.title}</span>
-                </div>
-              ))}
-            </div>
             {trajectLayerVisible ? (
-              <div className="mt-4 border-t border-border/70 pt-3">
+              <div className="mt-4 border-t border-border/70 pt-4">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-textMuted">
                   Status traject
                 </div>
-                <div className="mt-2 grid gap-2">
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   {MAP_STATUS_LEGEND_ORDER.map((status) => {
                     const palette = getMaatregelStatusPalette(status);
                     return (
                       <div
                         key={status}
-                        className="flex items-center gap-2 rounded-md bg-surfaceAlt/80 px-2 py-1.5"
+                        className="flex items-center gap-2 rounded-[14px] bg-surfaceAlt/80 px-3 py-2"
                       >
                         <span
                           className="h-2.5 w-2.5 rounded-full"
@@ -639,7 +978,7 @@ export function MapPage() {
       )}
 
       {error ? (
-        <div className="glass-panel absolute bottom-3 right-3 z-20 max-w-md rounded-card px-4 py-3 text-[12px] text-danger">
+        <div className="glass-panel absolute bottom-3 right-3 z-20 max-w-md rounded-[18px] px-4 py-3 text-[12px] text-danger">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
@@ -649,18 +988,18 @@ export function MapPage() {
 
       <Drawer
         open={drawerOpen}
-        onOpenChange={(open) => {
-          setDrawerOpen(open);
-          if (!open) {
-            setAddFormOpen(false);
-            setDraftMeasure(null);
-          }
-        }}
-        title={selectedTraject?.trajectCode || "Jaarplan traject"}
+        onOpenChange={setDrawerOpen}
+        title={selectedTraject?.trajectCode || "Trajectdetails"}
+        description={
+          selectedTraject
+            ? "Gerelateerde maatregelen via relationship query, hosted table edits en planningsoverlay."
+            : undefined
+        }
+        className="md:max-w-[560px]"
       >
         {selectedTraject && metadata ? (
           <div className="space-y-5 p-5">
-            <section className="rounded-card border border-border bg-surfaceAlt p-4">
+            <section className="rounded-[18px] border border-border bg-surfaceAlt p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
                 Traject
               </div>
@@ -677,8 +1016,21 @@ export function MapPage() {
                   </div>
                   <div className="mt-1">{selectedTraject.uitvoerderOnderhoud || "—"}</div>
                 </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                    Relaties geladen
+                  </div>
+                  <div className="mt-1">{relatedMeasures.length} maatregelen</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
+                    Planningvenster
+                  </div>
+                  <div className="mt-1">{planningWindowLabel}</div>
+                </div>
               </div>
-              <div className="mt-4 flex gap-2">
+
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -692,96 +1044,73 @@ export function MapPage() {
                 </Button>
                 <Button
                   type="button"
-                  variant={addFormOpen ? "secondary" : "default"}
-                  className="px-4 py-2"
-                  onClick={() => {
-                    setAddFormOpen((current) => !current);
-                    setDraftMeasure((current) =>
-                      current ??
-                      arcgisJaarplanService.createDefaultFormValues(metadata, selectedTraject)
-                    );
-                  }}
+                  variant="outline"
+                  onClick={() => focusTraject(selectedTraject.globalId)}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Maatregel toevoegen
+                  Focus op kaart
                 </Button>
               </div>
             </section>
 
-            {addFormOpen && draftMeasure ? (
-              <section className="rounded-card border border-border bg-white p-4">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
-                  Nieuwe maatregel
-                </div>
-                <MaatregelForm
-                  layout="compact"
-                  values={draftMeasure}
-                  metadata={metadata}
-                  steekproefStatusOptions={arcgisJaarplanService.steekproefStatusOptions}
-                  toelichtingText={draftToelichting}
-                  submitLabel="Maatregel opslaan"
-                  saving={saving}
-                  onFieldChange={updateDraftMeasure}
-                  onSubmit={() => {
-                    void handleCreateMeasure();
-                  }}
-                />
+            {relatedMeasuresError ? (
+              <section className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700">
+                {relatedMeasuresError}
               </section>
             ) : null}
 
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
-                  Geplande maatregelen
-                </div>
-                <div className="text-[11px] text-textMuted">{selectedMeasures.length} zichtbaar</div>
-              </div>
+            <RelatedMeasuresTableEditor
+              traject={selectedTraject}
+              measures={relatedMeasures}
+              metadata={metadata}
+              loading={relatedMeasuresLoading}
+              editable={metadata.editable}
+              savingNew={savingNewMeasure}
+              savingMeasureId={savingMeasureId}
+              deletingMeasureId={deletingMeasureId}
+              onCreate={(values) => {
+                void handleCreateMeasure(values);
+              }}
+              onSave={(measure, values) => {
+                void handleSaveMeasure(measure, values);
+              }}
+              onDelete={(measure) => {
+                void handleDeleteMeasure(measure);
+              }}
+            />
 
-              {!selectedMeasures.length ? (
-                <div className="rounded-card border border-border bg-surfaceAlt p-4 text-[12px] text-textDim">
-                  Voor dit traject zijn binnen de huidige filters geen maatregelen zichtbaar.
+            {relatedMeasures.length ? (
+              <section className="rounded-[18px] border border-border bg-surfaceAlt px-4 py-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Periode-overzicht
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {selectedMeasures.map((measure) => (
+                <div className="mt-3 grid gap-2">
+                  {relatedMeasures.slice(0, 4).map((measure) => (
                     <div
                       key={measure.globalId}
-                      className="rounded-card border border-border bg-surfaceAlt/70 p-4"
+                      className="flex items-center justify-between rounded-[14px] border border-border bg-white px-3 py-2"
                     >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <RegimeBadge
-                              regimeLabel={measure.regimeLabel}
-                              regimeNumber={measure.regimeNumber}
-                            />
-                            <MaatregelStatusBadge
-                              status={measure.statusMaatregel}
-                              compact
-                            />
-                            <MeasureSignals measure={measure} />
-                          </div>
-                          <div className="text-[13px] font-semibold text-text">
-                            {measure.werkzaamheidLabel}
-                          </div>
-                          <div className="text-[11px] leading-5 text-textDim">
-                            {measure.toelichtingLabel}
-                          </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-text">
+                          {measure.werkzaamheidLabel}
                         </div>
-                        <div className="rounded-card border border-border bg-white px-3 py-2 text-right">
-                          <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
-                            Werkperiode
-                          </div>
-                          <div className="mt-1 text-[12px] font-medium text-text">
-                            {formatWerkperiodeLabel(measure)}
-                          </div>
+                        <div className="text-[11px] text-textDim">
+                          {formatWerkperiodeLabel(measure)}
                         </div>
+                      </div>
+                      <div
+                        className="rounded-pill px-2 py-1 text-[10px] font-semibold"
+                        style={{
+                          backgroundColor: `${getMaatregelStatusPalette(measure.statusMaatregel).mapColor}1A`,
+                          color: getMaatregelStatusPalette(measure.statusMaatregel).mapColor,
+                        }}
+                      >
+                        {getMaatregelStatusPalette(measure.statusMaatregel).label}
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </section>
+              </section>
+            ) : null}
           </div>
         ) : null}
       </Drawer>

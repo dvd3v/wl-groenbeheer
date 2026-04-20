@@ -186,6 +186,11 @@ export interface SharedJaarplanFilters {
   hasMeasuresOnly: boolean;
 }
 
+export interface JaarplanTimeWindow {
+  start: string;
+  end: string;
+}
+
 export interface AttributeFormValues {
   trajectCode: string;
   status: number;

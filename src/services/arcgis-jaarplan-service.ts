@@ -1,19 +1,21 @@
 import Graphic from "@arcgis/core/Graphic.js";
 import ArcGISMap from "@arcgis/core/Map.js";
-import Basemap from "@arcgis/core/Basemap.js";
 import esriRequest from "@arcgis/core/request.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
-import GroupLayer from "@arcgis/core/layers/GroupLayer.js";
-import WMTSLayer from "@arcgis/core/layers/WMTSLayer.js";
-import WMSLayer from "@arcgis/core/layers/WMSLayer.js";
+import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer.js";
 import MapView from "@arcgis/core/views/MapView.js";
 import LayerListViewModel from "@arcgis/core/widgets/LayerList/LayerListViewModel.js";
 import Collection from "@arcgis/core/core/Collection.js";
+import SketchViewModel from "@arcgis/core/widgets/Sketch/SketchViewModel.js";
 import UniqueValueRenderer from "@arcgis/core/renderers/UniqueValueRenderer.js";
 import SimpleFillSymbol from "@arcgis/core/symbols/SimpleFillSymbol.js";
 import SimpleLineSymbol from "@arcgis/core/symbols/SimpleLineSymbol.js";
+import SimpleMarkerSymbol from "@arcgis/core/symbols/SimpleMarkerSymbol.js";
+import TextSymbol from "@arcgis/core/symbols/TextSymbol.js";
 import type ListItem from "@arcgis/core/widgets/LayerList/ListItem.js";
 import type Field from "@arcgis/core/layers/support/Field.js";
+import { getAggregatedMaatregelStatus } from "../lib/jaarplan-filtering";
+import { getMeasuresInTimeWindow } from "../lib/jaarplan-measure-utils";
 import type {
   JaarplanDomainOption,
   JaarplanLocalFields,
@@ -22,12 +24,19 @@ import type {
   JaarplanMeasureServerInput,
   JaarplanMetadata,
   JaarplanSubtypeConfig,
+  JaarplanTimeWindow,
   JaarplanTrajectRecord,
   LayerToggleItem,
   LegendItem,
   MaatregelStatus,
   SteekproefStatus,
 } from "../types/app";
+import {
+  createBasemapOptions,
+  createBorObjectGroupLayer,
+  GISIB_BOR_LAYER_DEFINITIONS,
+  type BasemapOption,
+} from "./arcgis-map-config";
 
 const DEFAULT_JAARPLAN_FEATURE_SERVICE_URL =
   "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/JaarplanTrajecten_pilot/FeatureServer";
@@ -38,26 +47,6 @@ const JAARPLAN_FEATURE_SERVICE_URL = normalizeFeatureServiceUrl(
     import.meta.env.VITE_JAARPLAN_MAATREGEL_TABLE_URL?.trim() ||
     DEFAULT_JAARPLAN_FEATURE_SERVICE_URL
 );
-
-const GISIB_BOR_MAPSERVER_URL =
-  "https://utility.arcgis.com/usrsvcs/servers/73fc6147aa1d457fa19f50598a9e1001/rest/services/Groenbeheer/GISIB_BOR/MapServer";
-const PDOK_LUCHTFOTO_WMS_URL = "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0";
-const PDOK_BGT_WMTS_URL = "https://service.pdok.nl/lv/bgt/wmts/v1_0";
-const GISIB_BOR_LAYER_DEFINITIONS = [
-  { id: 7, title: "Waterobject" },
-  { id: 8, title: "Terreindeel" },
-  { id: 9, title: "Groenobject" },
-  { id: 10, title: "Verhardingsobject" },
-  { id: 11, title: "Grindkoffer" },
-  { id: 12, title: "Rooster" },
-  { id: 4, title: "Hek" },
-  { id: 5, title: "Faunavoorziening" },
-  { id: 6, title: "Slagboom" },
-  { id: 15, title: "Boom" },
-  { id: 1, title: "Solitaire plant" },
-  { id: 2, title: "Markeringspaal" },
-  { id: 3, title: "Faunaverblijfplaats" },
-] as const;
 
 const LOCAL_STORAGE_KEY = "wl-groenbeheer.jaarplan-local-fields.v1";
 
@@ -142,12 +131,6 @@ const MAATREGEL_OUT_FIELDS = [
   FIELD_NAMES.locatiebezoek,
 ] as const;
 
-interface BasemapOption {
-  id: string;
-  label: string;
-  basemap: Basemap;
-}
-
 interface FeatureServiceResourceSummary {
   id: number;
   name: string;
@@ -162,6 +145,9 @@ export interface JaarplanMapContext {
   map: ArcGISMap;
   view: MapView;
   trajectLayer: FeatureLayer;
+  planningLayer: GraphicsLayer;
+  sketchLayer: GraphicsLayer;
+  sketchViewModel: SketchViewModel;
   layerListViewModel: LayerListViewModel;
   basemapOptions: BasemapOption[];
 }
@@ -197,67 +183,6 @@ function findNamedResource(
   });
 
   return exactOrContains ?? resources[0] ?? null;
-}
-
-function createPdokBasemap(layerName: string, title: string): Basemap {
-  return new Basemap({
-    id: layerName.toLowerCase(),
-    title,
-    baseLayers: [
-      new WMSLayer({
-        url: PDOK_LUCHTFOTO_WMS_URL,
-        title,
-        imageFormat: "image/jpeg",
-        imageTransparency: false,
-        sublayers: [{ name: layerName }],
-      }),
-    ],
-  });
-}
-
-function createBgtBasemap(): Basemap {
-  return new Basemap({
-    id: "pdok-bgt",
-    title: "PDOK BGT",
-    baseLayers: [
-      new WMTSLayer({
-        url: PDOK_BGT_WMTS_URL,
-        serviceMode: "KVP",
-        activeLayer: { id: "achtergrondvisualisatie" },
-      }),
-    ],
-  });
-}
-
-function createBasemapOptions(): BasemapOption[] {
-  return [
-    {
-      id: "light",
-      label: "Licht",
-      basemap: Basemap.fromId("gray-vector") ?? new Basemap({ title: "Licht" }),
-    },
-    {
-      id: "streets",
-      label: "Kleur",
-      basemap:
-        Basemap.fromId("streets-vector") ?? new Basemap({ title: "Kleur" }),
-    },
-    {
-      id: "pdok25",
-      label: "PDOK 25cm",
-      basemap: createPdokBasemap("Actueel_ortho25", "PDOK 25cm"),
-    },
-    {
-      id: "pdokhr",
-      label: "PDOK HR 8cm",
-      basemap: createPdokBasemap("Actueel_orthoHR", "PDOK HR 8cm"),
-    },
-    {
-      id: "bgt",
-      label: "BGT",
-      basemap: createBgtBasemap(),
-    },
-  ];
 }
 
 function readLocalFields(): Record<string, Partial<JaarplanLocalFields>> {
@@ -750,6 +675,86 @@ function toJaarplanMeasure(
   };
 }
 
+function sortMeasures(items: JaarplanMeasureRecord[]): JaarplanMeasureRecord[] {
+  return [...items].sort((left, right) => {
+    const trajectCompare = left.trajectCode.localeCompare(right.trajectCode, "nl");
+    if (trajectCompare !== 0) {
+      return trajectCompare;
+    }
+
+    const regimeCompare = (left.regimeNumber ?? 999) - (right.regimeNumber ?? 999);
+    if (regimeCompare !== 0) {
+      return regimeCompare;
+    }
+
+    const periodCompare = left.werkperiodeVanLabel.localeCompare(
+      right.werkperiodeVanLabel,
+      "nl"
+    );
+    if (periodCompare !== 0) {
+      return periodCompare;
+    }
+
+    return left.werkzaamheidLabel.localeCompare(right.werkzaamheidLabel, "nl");
+  });
+}
+
+function getPlanningOverlayLabel(
+  count: number,
+  trajectCode: string,
+  status: MaatregelStatus
+): string {
+  return `${trajectCode} • ${count} maatregel${count === 1 ? "" : "en"} • ${getStatusLabel(status)}`;
+}
+
+function createPlanningPolygonSymbol(
+  status: MaatregelStatus,
+  count: number
+): SimpleFillSymbol {
+  const [r, g, b] = getStatusColor(status);
+  const alpha = Math.min(0.12 + count * 0.035, 0.3);
+
+  return new SimpleFillSymbol({
+    color: [r, g, b, alpha],
+    outline: new SimpleLineSymbol({
+      color: [r, g, b, 1],
+      width: Math.min(2.4 + count * 0.2, 4),
+      style: "solid",
+    }),
+  });
+}
+
+function createPlanningMarkerSymbol(
+  status: MaatregelStatus,
+  count: number
+): SimpleMarkerSymbol {
+  const [r, g, b] = getStatusColor(status);
+
+  return new SimpleMarkerSymbol({
+    style: "circle",
+    size: Math.min(16 + count * 4, 32),
+    color: [r, g, b, 0.92],
+    outline: {
+      color: [255, 255, 255, 1],
+      width: 1.6,
+    },
+  });
+}
+
+function createPlanningTextSymbol(count: number): TextSymbol {
+  return new TextSymbol({
+    text: String(count),
+    color: [255, 255, 255, 1],
+    haloColor: [15, 23, 42, 0.85],
+    haloSize: 1.25,
+    font: {
+      family: "DM Sans",
+      size: 11,
+      weight: "bold",
+    },
+  });
+}
+
 export class ArcgisJaarplanService {
   readonly steekproefStatusOptions = STEEKPROEF_STATUS_OPTIONS;
   readonly maatregelStatusOptions = MAATREGEL_STATUS_OPTIONS;
@@ -815,7 +820,7 @@ export class ArcgisJaarplanService {
     const { trajectLayerUrl } = await this.resolveResourceInfo();
     const layer = new FeatureLayer({
       url: trajectLayerUrl,
-      outFields: ["*"],
+      outFields: [...TRAJECT_OUT_FIELDS],
       title: "Jaarplan Trajecten",
       renderer: createUitvoerderRenderer(metadata?.uitvoerderOptions ?? []),
     });
@@ -835,7 +840,7 @@ export class ArcgisJaarplanService {
         const { maatregelTableUrl } = await this.resolveResourceInfo();
         const table = new FeatureLayer({
           url: maatregelTableUrl,
-          outFields: ["*"],
+          outFields: [...MAATREGEL_OUT_FIELDS],
           title: "Jaarplan Maatregelen",
         });
 
@@ -917,8 +922,11 @@ export class ArcgisJaarplanService {
       trajecten.map((traject) => [traject.globalId, traject])
     );
 
-    return (await queryAllLayerFeatures(maatregelTable, false, MAATREGEL_OUT_FIELDS))
-      .map((feature) => toJaarplanMeasure(feature, metadata, trajectByGlobalId));
+    return sortMeasures(
+      (await queryAllLayerFeatures(maatregelTable, false, MAATREGEL_OUT_FIELDS)).map((feature) =>
+        toJaarplanMeasure(feature, metadata, trajectByGlobalId)
+      )
+    );
   }
 
   async loadBootstrap(): Promise<{
@@ -1057,14 +1065,76 @@ export class ArcgisJaarplanService {
     layer.renderer = createTrajectStatusRenderer(statusByTrajectId);
   }
 
+  async queryRelatedMeasuresForTraject(
+    trajectGlobalId: string,
+    metadata: JaarplanMetadata,
+    trajecten: JaarplanTrajectRecord[],
+    trajectLayer?: FeatureLayer,
+    maatregelTable?: FeatureLayer
+  ): Promise<JaarplanMeasureRecord[]> {
+    const traject = trajecten.find((candidate) => candidate.globalId === trajectGlobalId);
+    if (!traject) {
+      return [];
+    }
+
+    const [resolvedLayer, resolvedTable] = await Promise.all([
+      trajectLayer ? Promise.resolve(trajectLayer) : this.createTrajectLayer(metadata),
+      maatregelTable ? Promise.resolve(maatregelTable) : this.createMaatregelTable(),
+    ]);
+    const trajectByGlobalId = new Map(
+      trajecten.map((candidate) => [candidate.globalId, candidate])
+    );
+
+    if (metadata.relationshipId !== null && Number.isFinite(traject.objectId)) {
+      try {
+        const result = await resolvedLayer.queryRelatedFeatures({
+          relationshipId: metadata.relationshipId,
+          objectIds: [traject.objectId],
+          outFields: [...MAATREGEL_OUT_FIELDS],
+          returnGeometry: false,
+          orderByFields: [FIELD_NAMES.regime, FIELD_NAMES.werkperiodeVan, "OBJECTID"],
+        });
+        const features = result[String(traject.objectId)]?.features ?? [];
+
+        return sortMeasures(
+          features.map((feature) => toJaarplanMeasure(feature, metadata, trajectByGlobalId))
+        );
+      } catch (error) {
+        console.warn(
+          "Gerelateerde maatregelen query via relationship is mislukt; fallback op tabelquery.",
+          error
+        );
+      }
+    }
+
+    const featureSet = await resolvedTable.queryFeatures({
+      where: `${FIELD_NAMES.trajectGuid}='${traject.globalId.replace(/'/g, "''")}'`,
+      outFields: [...MAATREGEL_OUT_FIELDS],
+      returnGeometry: false,
+      orderByFields: [FIELD_NAMES.regime, FIELD_NAMES.werkperiodeVan, "OBJECTID"],
+    });
+
+    return sortMeasures(
+      featureSet.features.map((feature) => toJaarplanMeasure(feature, metadata, trajectByGlobalId))
+    );
+  }
+
   async createHeadlessMap(
     container: HTMLDivElement,
     metadata: JaarplanMetadata
   ): Promise<JaarplanMapContext> {
     const trajectLayer = await this.createTrajectLayer(metadata);
+    const planningLayer = new GraphicsLayer({
+      title: "Planning venster",
+      listMode: "show",
+    });
+    const sketchLayer = new GraphicsLayer({
+      title: "Analyse selectie",
+      listMode: "hide",
+    });
     const map = new ArcGISMap({
       basemap: createBasemapOptions()[0].basemap,
-      layers: [trajectLayer],
+      layers: [trajectLayer, planningLayer, sketchLayer],
     });
 
     const view = new MapView({
@@ -1082,28 +1152,9 @@ export class ArcgisJaarplanService {
     view.ui.empty();
 
     const addBorLayers = () => {
-      if (view.destroyed) {
-        return;
+      if (!view.destroyed) {
+        map.add(createBorObjectGroupLayer(), 0);
       }
-
-      const groupLayer = new GroupLayer({
-        title: "BOR objectlagen",
-        visibilityMode: "independent",
-        listMode: "show",
-      });
-
-      GISIB_BOR_LAYER_DEFINITIONS.forEach(({ id, title }) => {
-        groupLayer.add(
-          new FeatureLayer({
-            url: `${GISIB_BOR_MAPSERVER_URL}/${id}`,
-            title,
-            outFields: ["*"],
-            listMode: "show",
-          })
-        );
-      });
-
-      map.add(groupLayer, 0);
     };
 
     if (typeof window !== "undefined") {
@@ -1118,11 +1169,27 @@ export class ArcgisJaarplanService {
         item.open = false;
       },
     });
+    const sketchViewModel = new SketchViewModel({
+      view,
+      layer: sketchLayer,
+      defaultCreateOptions: {
+        hasZ: false,
+      },
+      defaultUpdateOptions: {
+        toggleToolOnClick: false,
+      },
+      snappingOptions: {
+        enabled: true,
+      },
+    });
 
     return {
       map,
       view,
       trajectLayer,
+      planningLayer,
+      sketchLayer,
+      sketchViewModel,
       layerListViewModel,
       basemapOptions: createBasemapOptions(),
     };
@@ -1323,6 +1390,42 @@ export class ArcgisJaarplanService {
     return toJaarplanMeasure(updated, metadata, trajectByGlobalId);
   }
 
+  async saveMeasure(
+    globalId: string,
+    values: JaarplanMeasureFormValues,
+    metadata: JaarplanMetadata,
+    trajecten: JaarplanTrajectRecord[]
+  ): Promise<JaarplanMeasureRecord> {
+    const updatedServerMeasure = await this.updateMeasureServerFields(
+      globalId,
+      {
+        trajectGuid: values.trajectGuid,
+        trajectGlobalId: values.trajectGlobalId,
+        regimeValue: values.regimeValue,
+        werkzaamhedenValue: values.werkzaamhedenValue,
+        toelichtingValue: values.toelichtingValue,
+        werkperiodeVanValue: values.werkperiodeVanValue,
+        werkperiodeTotValue: values.werkperiodeTotValue,
+        zijdeValue: values.zijdeValue,
+        afvoerenValue: values.afvoerenValue,
+        soortspecifiekeMaatValue: values.soortspecifiekeMaatValue,
+        locatiebezoekValue: values.locatiebezoekValue,
+      },
+      metadata,
+      trajecten
+    );
+
+    return this.updateMeasureLocalFields(updatedServerMeasure, {
+      statusMaatregel: values.statusMaatregel,
+      datumGepland: values.datumGepland,
+      datumUitgevoerd: values.datumUitgevoerd,
+      steekproefStatus: values.steekproefStatus,
+      redenNietUitgevoerd: values.redenNietUitgevoerd,
+      foto: values.foto,
+      opmerking: values.opmerking,
+    });
+  }
+
   async deleteMeasure(globalId: string, metadata: JaarplanMetadata): Promise<void> {
     const table = await this.createMaatregelTable();
 
@@ -1372,6 +1475,70 @@ export class ArcgisJaarplanService {
       ...measure,
       ...localFields,
     };
+  }
+
+  renderPlanningLayer(
+    planningLayer: GraphicsLayer,
+    trajecten: JaarplanTrajectRecord[],
+    measures: JaarplanMeasureRecord[],
+    metadata: JaarplanMetadata,
+    timeWindow: JaarplanTimeWindow
+  ): void {
+    const planningMeasures = getMeasuresInTimeWindow(measures, metadata, timeWindow);
+    const trajectById = new Map(trajecten.map((traject) => [traject.globalId, traject]));
+    const measuresByTrajectId = planningMeasures.reduce<Record<string, JaarplanMeasureRecord[]>>(
+      (acc, measure) => {
+        acc[measure.trajectGlobalId] = [...(acc[measure.trajectGlobalId] ?? []), measure];
+        return acc;
+      },
+      {}
+    );
+
+    const graphics = Object.entries(measuresByTrajectId).flatMap(([trajectGlobalId, items]) => {
+      const traject = trajectById.get(trajectGlobalId);
+      if (!traject?.geometry) {
+        return [];
+      }
+
+      const status = getAggregatedMaatregelStatus(items);
+      const sharedAttributes = {
+        trajectGlobalId,
+        trajectCode: traject.trajectCode,
+        measureCount: items.length,
+        status,
+        title: getPlanningOverlayLabel(items.length, traject.trajectCode, status),
+      };
+      const overlayGraphics = [
+        new Graphic({
+          geometry: traject.geometry,
+          symbol: createPlanningPolygonSymbol(status, items.length),
+          attributes: sharedAttributes,
+        }),
+      ];
+      const anchor = traject.geometry.extent?.center;
+
+      if (anchor) {
+        overlayGraphics.push(
+          new Graphic({
+            geometry: anchor,
+            symbol: createPlanningMarkerSymbol(status, items.length),
+            attributes: sharedAttributes,
+          }),
+          new Graphic({
+            geometry: anchor,
+            symbol: createPlanningTextSymbol(items.length),
+            attributes: sharedAttributes,
+          })
+        );
+      }
+
+      return overlayGraphics;
+    });
+
+    planningLayer.removeAll();
+    if (graphics.length) {
+      planningLayer.addMany(graphics);
+    }
   }
 
   getSteekproefStatusLabel(value: SteekproefStatus): string {

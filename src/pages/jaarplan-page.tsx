@@ -17,6 +17,7 @@ import {
   getWerkperiodeLabels,
   formatWerkperiodeLabel,
 } from "../lib/jaarplan-filtering";
+import { toMeasureDraft } from "../lib/jaarplan-measure-utils";
 import { useAppStore } from "../store/app-store";
 import type {
   JaarplanMeasureFormValues,
@@ -27,29 +28,6 @@ import type {
 } from "../types/app";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
-
-function toMeasureDraft(measure: JaarplanMeasureRecord): JaarplanMeasureFormValues {
-  return {
-    trajectGuid: measure.trajectGuid,
-    trajectGlobalId: measure.trajectGlobalId,
-    regimeValue: measure.regimeValue,
-    werkzaamhedenValue: measure.werkzaamhedenValue,
-    toelichtingValue: measure.toelichtingValue,
-    werkperiodeVanValue: measure.werkperiodeVanValue,
-    werkperiodeTotValue: measure.werkperiodeTotValue,
-    zijdeValue: measure.zijdeValue,
-    afvoerenValue: measure.afvoerenValue,
-    soortspecifiekeMaatValue: measure.soortspecifiekeMaatValue,
-    locatiebezoekValue: measure.locatiebezoekValue,
-    statusMaatregel: measure.statusMaatregel,
-    datumGepland: measure.datumGepland,
-    datumUitgevoerd: measure.datumUitgevoerd,
-    steekproefStatus: measure.steekproefStatus,
-    redenNietUitgevoerd: measure.redenNietUitgevoerd,
-    foto: measure.foto,
-    opmerking: measure.opmerking,
-  };
-}
 
 function toSelectOptions(values: string[]) {
   return [...new Set(values)]
