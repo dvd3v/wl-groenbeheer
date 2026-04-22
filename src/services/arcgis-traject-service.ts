@@ -75,7 +75,11 @@ export interface HeadlessMapContext {
   map: Map;
   view: MapView;
   trajectLayer: FeatureLayer;
+  borGroupLayer: GroupLayer;
+  borLayers: FeatureLayer[];
   sketchLayer: GraphicsLayer;
+  reviewSelectionLayer: GraphicsLayer;
+  reviewDiagnosticLayer: GraphicsLayer;
   sketchViewModel: SketchViewModel;
   layerListViewModel: LayerListViewModel;
   legendViewModel: LegendViewModel;
@@ -387,13 +391,20 @@ export class ArcgisTrajectService {
 
   async createHeadlessMap(container: HTMLDivElement): Promise<HeadlessMapContext> {
     const trajectLayer = await this.createTrajectLayer();
+    const basemapOptions = createBasemapOptions();
+    const defaultBasemap =
+      basemapOptions.find((option) => option.id === "streets")?.basemap ?? basemapOptions[0].basemap;
+    const reviewDiagnosticLayer = new GraphicsLayer({
+      title: "Review signalen",
+      listMode: "hide",
+    });
+    const reviewSelectionLayer = new GraphicsLayer({
+      title: "Review selectie",
+      listMode: "hide",
+    });
     const sketchLayer = new GraphicsLayer({
       title: "Tijdelijke geometrie",
       listMode: "hide",
-    });
-    const map = new Map({
-      basemap: createBasemapOptions()[0].basemap,
-      layers: [trajectLayer, sketchLayer],
     });
 
     const groupLayer = new GroupLayer({
@@ -402,18 +413,26 @@ export class ArcgisTrajectService {
       listMode: "show",
     });
 
-    GISIB_BOR_LAYER_DEFINITIONS.forEach(({ id, title }) => {
-      groupLayer.add(
-        new FeatureLayer({
-          url: `${GISIB_BOR_MAPSERVER_URL}/${id}`,
-          title,
-          outFields: ["*"],
-          listMode: "show",
-        })
-      );
-    });
+    const borLayers = GISIB_BOR_LAYER_DEFINITIONS.map(({ id, title }) =>
+      new FeatureLayer({
+        url: `${GISIB_BOR_MAPSERVER_URL}/${id}`,
+        title,
+        outFields: ["*"],
+        listMode: "show",
+      })
+    );
+    borLayers.forEach((layer) => groupLayer.add(layer));
 
-    map.add(groupLayer, 0);
+    const map = new Map({
+      basemap: defaultBasemap,
+      layers: [
+        groupLayer,
+        trajectLayer,
+        reviewDiagnosticLayer,
+        reviewSelectionLayer,
+        sketchLayer,
+      ],
+    });
 
     const view = new MapView({
       container,
@@ -452,11 +471,15 @@ export class ArcgisTrajectService {
       map,
       view,
       trajectLayer,
+      borGroupLayer: groupLayer,
+      borLayers,
       sketchLayer,
+      reviewSelectionLayer,
+      reviewDiagnosticLayer,
       sketchViewModel,
       layerListViewModel,
       legendViewModel,
-      basemapOptions: createBasemapOptions(),
+      basemapOptions,
       statusOptions: await this.getStatusOptions(trajectLayer),
       modelTypeOptions: await this.getModelTypeOptions(trajectLayer),
     };
@@ -466,26 +489,26 @@ export class ArcgisTrajectService {
     layer: FeatureLayer,
     globalId: string
   ): Promise<Graphic | null> {
+    const query = layer.createQuery();
+    query.outFields = ["*"];
+    query.returnGeometry = true;
+    query.maxAllowableOffset = 0;
+    query.outSpatialReference = layer.spatialReference ?? undefined;
+
     if (globalId.startsWith("oid:")) {
       const objectId = Number(globalId.slice(4));
       if (!Number.isFinite(objectId)) {
         return null;
       }
 
-      const featureSet = await layer.queryFeatures({
-        objectIds: [objectId],
-        outFields: ["*"],
-        returnGeometry: true,
-      });
+      query.objectIds = [objectId];
+      const featureSet = await layer.queryFeatures(query);
 
       return featureSet.features[0] ?? null;
     }
 
-    const featureSet = await layer.queryFeatures({
-      where: `guid='${globalId.replace(/'/g, "''")}'`,
-      outFields: ["*"],
-      returnGeometry: true,
-    });
+    query.where = `guid='${globalId.replace(/'/g, "''")}'`;
+    const featureSet = await layer.queryFeatures(query);
 
     return featureSet.features[0] ?? null;
   }

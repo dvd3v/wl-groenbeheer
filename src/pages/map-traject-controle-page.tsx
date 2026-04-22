@@ -1,37 +1,38 @@
 import * as reactiveUtils from "@arcgis/core/core/reactiveUtils.js";
-import type { ViewHitTestResult } from "@arcgis/core/views/types.js";
+import type Graphic from "@arcgis/core/Graphic.js";
+import type { GeometryWithoutMeshUnion } from "@arcgis/core/geometry/types.js";
+import FeatureEffect from "@arcgis/core/layers/support/FeatureEffect.js";
+import FeatureFilter from "@arcgis/core/layers/support/FeatureFilter.js";
 import type FeatureLayerView from "@arcgis/core/views/layers/FeatureLayerView.js";
-import { AlertTriangle, Layers3, LoaderCircle, X } from "lucide-react";
+import type { ViewHitTestResult } from "@arcgis/core/views/types.js";
+import { AlertTriangle, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AiAssistantOverlay } from "../components/map/ai-assistant-overlay";
-import { AttributeDrawer } from "../components/map/attribute-drawer";
 import { BasemapSwitcher } from "../components/map/basemap-switcher";
 import { MapSidebar } from "../components/map/map-sidebar";
 import { MapToolbar } from "../components/map/map-toolbar";
+import { TrajectReviewPanel } from "../components/map/traject-review-panel";
 import { Button } from "../components/ui/button";
-import { mockPlanningService } from "../services/mock-planning-service";
 import {
   arcgisTrajectService,
   type HeadlessMapContext,
 } from "../services/arcgis-traject-service";
+import {
+  buildTrajectReview,
+  createOverlapDiagnosticsGraphics,
+  createTrajectSelectionGraphics,
+  type TrajectReviewSummary,
+} from "../services/traject-review-service";
 import { useAppStore } from "../store/app-store";
 import type {
   AttributeFormValues,
-  BorFeatureSelection,
   LayerToggleItem,
   LegendItem,
-  PlanningRegistration,
+  PendingGeometryEdits,
   StatusOption,
   TrajectRendererMode,
   TrajectRecord,
 } from "../types/app";
-
-const BRONLAAG_OPTIONS = [
-  "terreindeel",
-  "waterobject",
-  "groenobject",
-  "verhardingsobject",
-] as const;
 
 const BRONLAAG_ALIASES: Record<string, string> = {
   terreindeel: "terreindeel",
@@ -52,6 +53,30 @@ interface MapTrajectFilters {
   onlyNewGeometry: boolean;
 }
 
+interface TrajectSelectionChoice {
+  globalId: string;
+  trajectCode: string;
+  status: number;
+  shapeArea: number | null;
+  left: number;
+  top: number;
+}
+
+interface BorPopupAttribute {
+  key: string;
+  label: string;
+  value: string;
+}
+
+interface BorPopupState {
+  layerTitle: string;
+  displayTitle: string;
+  left: number;
+  top: number;
+  primaryAttributes: BorPopupAttribute[];
+  secondaryAttributes: BorPopupAttribute[];
+}
+
 const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
   objectCountMax: 160,
   typeCoderingen: [],
@@ -62,6 +87,13 @@ const DEFAULT_MAP_FILTERS: MapTrajectFilters = {
 
 const TRAJECT_LAYER_EDITING_DISABLED_MESSAGE =
   "Bewerken is niet ingeschakeld voor deze trajectlaag.";
+const BOR_POPUP_PRIORITY_FIELDS = [
+  "OBJECTNUMMER",
+  "OBJECTTYPE",
+  "TYPE",
+  "TYPE_GEDETAILLEERD",
+  "UITVOERDER_ONDERHOUD",
+] as const;
 
 function toggleInList<T>(values: T[], value: T): T[] {
   return values.includes(value)
@@ -89,6 +121,56 @@ function arraysEqual<T>(left: T[], right: T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function formatAttributeLabel(key: string): string {
+  return key.replace(/_/g, " ");
+}
+
+function formatAttributeValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  if (value instanceof Date) {
+    return value.toLocaleString("nl-NL");
+  }
+
+  return String(value);
+}
+
+function buildBorPopupState(
+  attributes: Record<string, unknown>,
+  layerTitle: string,
+  x: number,
+  y: number
+): BorPopupState {
+  const primaryAttributes = BOR_POPUP_PRIORITY_FIELDS.map((key) => ({
+    key,
+    label: formatAttributeLabel(key),
+    value: formatAttributeValue(attributes[key]),
+  }));
+
+  const secondaryAttributes = Object.entries(attributes)
+    .filter(([key]) => !BOR_POPUP_PRIORITY_FIELDS.includes(key as (typeof BOR_POPUP_PRIORITY_FIELDS)[number]))
+    .sort(([left], [right]) => left.localeCompare(right, "nl"))
+    .map(([key, value]) => ({
+      key,
+      label: formatAttributeLabel(key),
+      value: formatAttributeValue(value),
+    }));
+
+  return {
+    layerTitle,
+    displayTitle:
+      formatAttributeValue(attributes.OBJECTNUMMER) !== "—"
+        ? formatAttributeValue(attributes.OBJECTNUMMER)
+        : formatAttributeValue(attributes.OBJECTID),
+    left: Math.min(x + 14, window.innerWidth - 404),
+    top: Math.min(y + 14, window.innerHeight - 520),
+    primaryAttributes,
+    secondaryAttributes,
+  };
+}
+
 function toTrajectGlobalId(attributes: Record<string, unknown>): string {
   const guid = String(attributes.guid ?? "").trim();
   if (guid) {
@@ -99,63 +181,6 @@ function toTrajectGlobalId(attributes: Record<string, unknown>): string {
   return Number.isFinite(objectId) ? `oid:${objectId}` : "";
 }
 
-function toAttributeLabel(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatAttributeValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "—";
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => formatAttributeValue(item)).join(", ");
-  }
-
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-
-  return String(value);
-}
-
-function toBorFeatureSelection(
-  result: ViewHitTestResult["results"][number]
-): BorFeatureSelection | null {
-  if (!("graphic" in result)) {
-    return null;
-  }
-
-  const layer = result.graphic.layer;
-  if (!layer || layer.type !== "feature") {
-    return null;
-  }
-
-  const attributes = Object.entries(result.graphic.attributes ?? {})
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => ({
-      key,
-      label: toAttributeLabel(key),
-      value: formatAttributeValue(value),
-    }))
-    .sort((left, right) => left.label.localeCompare(right.label, "nl"));
-
-  const objectIdAttribute =
-    attributes.find((attribute) => attribute.key.toUpperCase() === "OBJECTID")?.value ?? "";
-
-  return {
-    layerId: layer.uid,
-    layerTitle: layer.title || "BOR object",
-    displayTitle: objectIdAttribute
-      ? `${layer.title || "BOR object"} ${objectIdAttribute}`
-      : layer.title || "BOR object",
-    attributes,
-  };
-}
-
 function toFormValues(traject: TrajectRecord | null, statusFallback: number): AttributeFormValues {
   return {
     trajectCode: traject?.trajectCode ?? "",
@@ -164,27 +189,118 @@ function toFormValues(traject: TrajectRecord | null, statusFallback: number): At
   };
 }
 
+async function clearReviewPresentation(context: HeadlessMapContext) {
+  context.reviewSelectionLayer.removeAll();
+  context.reviewDiagnosticLayer.removeAll();
+
+  try {
+    const trajectLayerView = (await context.view.whenLayerView(
+      context.trajectLayer
+    )) as FeatureLayerView;
+    trajectLayerView.featureEffect = null;
+  } catch {
+    // View cleanup may already be in progress.
+  }
+}
+
+async function applyReviewEffects(
+  context: HeadlessMapContext,
+  _geometry: GeometryWithoutMeshUnion,
+  selectedObjectId: number | null
+) {
+  // Keep the source layers visible but quiet, and let the review overlays carry the emphasis.
+  try {
+    const trajectLayerView = (await context.view.whenLayerView(
+      context.trajectLayer
+    )) as FeatureLayerView;
+
+    trajectLayerView.featureEffect = selectedObjectId
+      ? new FeatureEffect({
+          filter: new FeatureFilter({
+            where: `OBJECTID = ${selectedObjectId}`,
+          }),
+          includedEffect: "opacity(22%)",
+          excludedEffect: "grayscale(100%) opacity(22%)",
+        })
+      : null;
+  } catch {
+    // Ignore layer effect failures and keep map usable.
+  }
+}
+
+async function resolveReviewGeometry(
+  context: HeadlessMapContext,
+  options: {
+    pendingGeometry: GeometryWithoutMeshUnion | null;
+    selectedGlobalId: string | null;
+    fallbackGeometry: GeometryWithoutMeshUnion | null;
+    geometryCache: Map<string, GeometryWithoutMeshUnion>;
+  }
+): Promise<GeometryWithoutMeshUnion | null> {
+  const { pendingGeometry, selectedGlobalId, fallbackGeometry, geometryCache } = options;
+
+  if (pendingGeometry) {
+    return pendingGeometry;
+  }
+
+  if (selectedGlobalId) {
+    const cachedGeometry = geometryCache.get(selectedGlobalId);
+    if (cachedGeometry) {
+      return cachedGeometry;
+    }
+  }
+
+  if (selectedGlobalId) {
+    try {
+      const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
+        context.trajectLayer,
+        selectedGlobalId
+      );
+      const layerGeometry = graphic?.geometry as GeometryWithoutMeshUnion | null | undefined;
+      if (layerGeometry) {
+        geometryCache.set(selectedGlobalId, layerGeometry);
+        return layerGeometry;
+      }
+    } catch {
+      // Fall back to the stored geometry when a direct query fails.
+    }
+  }
+
+  return fallbackGeometry;
+}
+
+function isGraphicHit(
+  result: ViewHitTestResult["results"][number]
+): result is ViewHitTestResult["results"][number] & { graphic: Graphic } {
+  return "graphic" in result;
+}
+
 export function MapTrajectControlePage() {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const highlightRef = useRef<{ remove: () => void } | null>(null);
-  const trajectByGlobalIdRef = useRef<Map<string, TrajectRecord>>(new Map());
   const mapViewStateRef = useRef<typeof mapViewState>(null);
   const layerVisibilityRef = useRef<Record<string, boolean>>({});
   const rendererModeRef = useRef<TrajectRendererMode>("status");
+  const reviewRequestIdRef = useRef(0);
+  const trajectByGlobalIdRef = useRef<Map<string, TrajectRecord>>(new Map());
+  const reviewHistoryRef = useRef<string[]>([]);
+  const reviewHistoryIndexRef = useRef(-1);
+  const borPopupDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const selectedGlobalIdRef = useRef<string | null>(null);
+  const pendingGeometryEditsRef = useRef<PendingGeometryEdits | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const reviewHighlightHandleRef = useRef<{ remove: () => void } | null>(null);
+  const exactGeometryCacheRef = useRef<Map<string, GeometryWithoutMeshUnion>>(new Map());
+  const reviewSummaryCacheRef = useRef<Map<string, TrajectReviewSummary>>(new Map());
   const trajecten = useAppStore((state) => state.trajecten);
-  const planningItems = useAppStore((state) => state.planningItems);
-  const initialStatusByGlobalId = useAppStore((state) => state.initialStatusByGlobalId);
   const selectedGlobalId = useAppStore((state) => state.selectedGlobalId);
   const selectedTraject = useAppStore((state) =>
     state.trajecten.find((traject) => traject.globalId === state.selectedGlobalId) ?? null
   );
-  const attributeDrawerOpen = useAppStore((state) => state.attributeDrawerOpen);
   const pendingGeometryEdits = useAppStore((state) => state.pendingGeometryEdits);
   const zoomTargetGlobalId = useAppStore((state) => state.zoomTargetGlobalId);
   const mapViewState = useAppStore((state) => state.mapViewState);
   const layerVisibilityByTitle = useAppStore((state) => state.layerVisibilityByTitle);
   const selectTraject = useAppStore((state) => state.selectTraject);
-  const setAttributeDrawerOpen = useAppStore((state) => state.setAttributeDrawerOpen);
   const setEditingMode = useAppStore((state) => state.setEditingMode);
   const setPendingGeometryEdits = useAppStore((state) => state.setPendingGeometryEdits);
   const setZoomTargetGlobalId = useAppStore((state) => state.setZoomTargetGlobalId);
@@ -192,24 +308,68 @@ export function MapTrajectControlePage() {
   const setLayerVisibility = useAppStore((state) => state.setLayerVisibility);
   const upsertTraject = useAppStore((state) => state.upsertTraject);
   const removeTraject = useAppStore((state) => state.removeTraject);
-  const updatePlanningItem = useAppStore((state) => state.updatePlanningItem);
   const [mapContext, setMapContext] = useState<HeadlessMapContext | null>(null);
   const [layerItems, setLayerItems] = useState<LayerToggleItem[]>([]);
   const [legendItems, setLegendItems] = useState<LegendItem[]>([]);
-  const [activeBasemapId, setActiveBasemapId] = useState("light");
+  const [activeBasemapId, setActiveBasemapId] = useState("streets");
   const [rendererMode, setRendererMode] = useState<TrajectRendererMode>("status");
   const [mapFilters, setMapFilters] = useState<MapTrajectFilters>(DEFAULT_MAP_FILTERS);
-  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
-  const [selectedBorFeature, setSelectedBorFeature] = useState<BorFeatureSelection | null>(null);
   const [draftValues, setDraftValues] = useState<AttributeFormValues | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<TrajectReviewSummary | null>(null);
+  const [selectionChoices, setSelectionChoices] = useState<TrajectSelectionChoice[] | null>(null);
+  const [borPopup, setBorPopup] = useState<BorPopupState | null>(null);
+  const [borPopupExpanded, setBorPopupExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!borPopup) {
+      return;
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      const offset = borPopupDragOffsetRef.current;
+      if (!offset) {
+        return;
+      }
+
+      const maxLeft = Math.max(12, window.innerWidth - 402);
+      const maxTop = Math.max(12, window.innerHeight - 120);
+      setBorPopup((current) =>
+        current
+          ? {
+              ...current,
+              left: Math.min(Math.max(12, event.clientX - offset.x), maxLeft),
+              top: Math.min(Math.max(12, event.clientY - offset.y), maxTop),
+            }
+          : current
+      );
+    }
+
+    function handleMouseUp() {
+      borPopupDragOffsetRef.current = null;
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      borPopupDragOffsetRef.current = null;
+    };
+  }, [borPopup]);
 
   const availableTypeCoderingen = useMemo(
     () =>
       [...new Set(trajecten.map((traject) => traject.typeCodering).filter(Boolean))]
         .sort((left, right) => left.localeCompare(right, "nl")),
+    [trajecten]
+  );
+
+  const trajectByGlobalId = useMemo(
+    () => new Map(trajecten.map((traject) => [traject.globalId, traject])),
     [trajecten]
   );
 
@@ -238,8 +398,7 @@ export function MapTrajectControlePage() {
           .map((value) => normalizeBronlaag(value))
           .sort((left, right) => left.localeCompare(right, "nl"));
         const matchesBronlagen =
-          mapFilters.bronlagen.length === 0 ||
-          arraysEqual(bronlagen, selectedBronlagen);
+          mapFilters.bronlagen.length === 0 || arraysEqual(bronlagen, selectedBronlagen);
         const matchesNewGeometry =
           !mapFilters.onlyNewGeometry || isNewTrajectGeometry(traject);
 
@@ -264,23 +423,166 @@ export function MapTrajectControlePage() {
     [filteredTrajecten]
   );
 
-  const defaultFormValues = useMemo(
-    () => ({
-      trajectCode: draftValues?.trajectCode || selectedTraject?.trajectCode || "",
-      status:
-        draftValues?.status ??
-        selectedTraject?.status ??
-        mapContext?.statusOptions[0]?.value ??
-        1,
-      opmerking: draftValues?.opmerking ?? selectedTraject?.opmerking ?? "",
-    }),
-    [draftValues, mapContext, selectedTraject]
+  const filteredIndex = useMemo(
+    () =>
+      selectedGlobalId
+        ? filteredTrajecten.findIndex((traject) => traject.globalId === selectedGlobalId)
+        : -1,
+    [filteredTrajecten, selectedGlobalId]
   );
-  useEffect(() => {
-    trajectByGlobalIdRef.current = new Map(
-      trajecten.map((traject) => [traject.globalId, traject])
+  const previousTrajectId =
+    filteredIndex > 0 ? filteredTrajecten[filteredIndex - 1]?.globalId ?? null : null;
+  const nextTrajectId =
+    filteredIndex >= 0 && filteredIndex < filteredTrajecten.length - 1
+      ? filteredTrajecten[filteredIndex + 1]?.globalId ?? null
+      : null;
+  const pendingStatusValue =
+    statusOptions.find((option) => option.label.toLowerCase() === "controleren")?.value ?? 1;
+  const nextPendingTrajectId = useMemo(() => {
+    if (!filteredTrajecten.length) {
+      return null;
+    }
+
+    const start = filteredIndex >= 0 ? filteredIndex + 1 : 0;
+    for (let offset = 0; offset < filteredTrajecten.length; offset += 1) {
+      const candidate = filteredTrajecten[(start + offset) % filteredTrajecten.length];
+      if (candidate.status === pendingStatusValue && candidate.globalId !== selectedGlobalId) {
+        return candidate.globalId;
+      }
+    }
+
+    return null;
+  }, [filteredIndex, filteredTrajecten, pendingStatusValue, selectedGlobalId]);
+
+  const reviewFormValues = useMemo(
+    () => draftValues ?? toFormValues(selectedTraject, statusOptions[0]?.value ?? 1),
+    [draftValues, selectedTraject, statusOptions]
+  );
+  const hasUnsavedChanges = useMemo(() => {
+    if (pendingGeometryEdits) {
+      return true;
+    }
+
+    if (!selectedTraject || !draftValues) {
+      return false;
+    }
+
+    return (
+      draftValues.trajectCode !== selectedTraject.trajectCode ||
+      draftValues.status !== selectedTraject.status ||
+      draftValues.opmerking !== selectedTraject.opmerking
     );
-  }, [trajecten]);
+  }, [draftValues, pendingGeometryEdits, selectedTraject]);
+
+  function canDiscardUnsavedChanges() {
+    if (!hasUnsavedChanges) {
+      return true;
+    }
+
+    return window.confirm(
+      "Niet-opgeslagen reviewwijzigingen gaan verloren. Wil je doorgaan?"
+    );
+  }
+
+  function updateDraftValue<K extends keyof AttributeFormValues>(
+    field: K,
+    value: AttributeFormValues[K]
+  ) {
+    setDraftValues((current) => ({
+      ...(current ?? toFormValues(selectedTraject, statusOptions[0]?.value ?? 1)),
+      [field]: value,
+    }));
+  }
+
+  function pushReviewHistory(globalId: string) {
+    const nextIndex = reviewHistoryIndexRef.current + 1;
+    const nextHistory = reviewHistoryRef.current.slice(0, nextIndex);
+
+    if (nextHistory[nextHistory.length - 1] !== globalId) {
+      nextHistory.push(globalId);
+    }
+
+    reviewHistoryRef.current = nextHistory;
+    reviewHistoryIndexRef.current = nextHistory.length - 1;
+  }
+
+  function moveReviewHistory(step: -1 | 1): string | null {
+    const nextIndex = reviewHistoryIndexRef.current + step;
+    if (nextIndex < 0 || nextIndex >= reviewHistoryRef.current.length) {
+      return null;
+    }
+
+    reviewHistoryIndexRef.current = nextIndex;
+    return reviewHistoryRef.current[nextIndex] ?? null;
+  }
+
+  function resetReviewState(options?: { clearBorPopup?: boolean }) {
+    setSelectionChoices(null);
+    setReviewSummary(null);
+    setDraftValues(null);
+    if (options?.clearBorPopup) {
+      setBorPopup(null);
+    }
+    setPendingGeometryEdits(null);
+    setZoomTargetGlobalId(null);
+    setEditingMode("idle");
+    reviewHistoryRef.current = [];
+    reviewHistoryIndexRef.current = -1;
+    selectTraject(null, "map");
+  }
+
+  function clearReviewHighlight() {
+    reviewHighlightHandleRef.current?.remove();
+    reviewHighlightHandleRef.current = null;
+  }
+
+  function selectTrajectForReview(
+    globalId: string,
+    source: "map" | "table",
+    options?: { zoom?: boolean; recordHistory?: boolean }
+  ) {
+    const traject = trajectByGlobalId.get(globalId) ?? null;
+    setSelectionChoices(null);
+    setBorPopup(null);
+    setDraftValues(toFormValues(traject, statusOptions[0]?.value ?? 1));
+    setPendingGeometryEdits(null);
+    setEditingMode("idle");
+    selectTraject(globalId, source);
+    setZoomTargetGlobalId(options?.zoom ? globalId : null);
+
+    if (options?.recordHistory !== false) {
+      pushReviewHistory(globalId);
+    }
+  }
+
+  function handleSelectTraject(
+    globalId: string,
+    source: "map" | "table",
+    options?: { zoom?: boolean; recordHistory?: boolean }
+  ) {
+    if (globalId === selectedGlobalId && !pendingGeometryEdits) {
+      setSelectionChoices(null);
+      setBorPopup(null);
+      if (options?.zoom) {
+        setZoomTargetGlobalId(globalId);
+      }
+      return;
+    }
+
+    if (!canDiscardUnsavedChanges()) {
+      return;
+    }
+
+    selectTrajectForReview(globalId, source, options);
+  }
+
+  function handleCloseReview() {
+    if (!canDiscardUnsavedChanges()) {
+      return;
+    }
+
+    resetReviewState({ clearBorPopup: true });
+  }
 
   useEffect(() => {
     mapViewStateRef.current = mapViewState;
@@ -293,6 +595,48 @@ export function MapTrajectControlePage() {
   useEffect(() => {
     rendererModeRef.current = rendererMode;
   }, [rendererMode]);
+
+  useEffect(() => {
+    trajectByGlobalIdRef.current = trajectByGlobalId;
+  }, [trajectByGlobalId]);
+
+  useEffect(() => {
+    selectedGlobalIdRef.current = selectedGlobalId;
+  }, [selectedGlobalId]);
+
+  useEffect(() => {
+    pendingGeometryEditsRef.current = pendingGeometryEdits;
+  }, [pendingGeometryEdits]);
+
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const fallback = statusOptions[0]?.value ?? 1;
+
+    if (pendingGeometryEdits?.mode === "create" && !selectedTraject) {
+      setDraftValues((current) => current ?? toFormValues(null, fallback));
+      return;
+    }
+
+    if (selectedTraject) {
+      setDraftValues(toFormValues(selectedTraject, fallback));
+      return;
+    }
+
+    if (!pendingGeometryEdits) {
+      setDraftValues(null);
+      setReviewSummary(null);
+    }
+  }, [
+    pendingGeometryEdits,
+    selectedTraject?.globalId,
+    selectedTraject?.opmerking,
+    selectedTraject?.status,
+    selectedTraject?.trajectCode,
+    statusOptions,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -312,6 +656,19 @@ export function MapTrajectControlePage() {
         }
 
         localContext = createdContext;
+        (
+          createdContext.view as typeof createdContext.view & {
+            highlightOptions?: {
+              color: [number, number, number, number];
+              haloOpacity: number;
+              fillOpacity: number;
+            };
+          }
+        ).highlightOptions = {
+          color: [14, 116, 144, 1],
+          haloOpacity: 1,
+          fillOpacity: 0.08,
+        };
         if (mapViewStateRef.current) {
           createdContext.view.center = {
             x: mapViewStateRef.current.centerX,
@@ -342,7 +699,7 @@ export function MapTrajectControlePage() {
         );
         setLegendItems(
           arcgisTrajectService.extractLegendItems(createdContext.legendViewModel, {
-            rendererMode,
+            rendererMode: rendererModeRef.current,
             trajectLayerId: createdContext.trajectLayer.uid,
             statusOptions: createdContext.statusOptions,
             modelTypeOptions: createdContext.modelTypeOptions,
@@ -407,85 +764,125 @@ export function MapTrajectControlePage() {
         );
 
         const mapClickHandle = createdContext.view.on("click", async (event) => {
-          const hitTest = await createdContext.view.hitTest(event);
-          const trajectHit = hitTest.results.find(
-            (result) =>
-              "graphic" in result && result.graphic.layer === createdContext.trajectLayer
+          const activeSelectedGlobalId = selectedGlobalIdRef.current;
+          const activePendingGeometryEdits = pendingGeometryEditsRef.current;
+          const canDiscardCurrentSelection = () =>
+            !hasUnsavedChangesRef.current ||
+            window.confirm(
+              "Niet-opgeslagen reviewwijzigingen gaan verloren. Wil je doorgaan?"
+            );
+
+          const hitTest = await createdContext.view.hitTest(event, {
+            include: [createdContext.trajectLayer, ...createdContext.borLayers],
+          });
+          const trajectHits = hitTest.results
+            .filter(
+              (result): result is ViewHitTestResult["results"][number] & { graphic: Graphic } =>
+                isGraphicHit(result) && result.graphic.layer === createdContext.trajectLayer
+            )
+            .map((result) => {
+              const attributes = result.graphic.attributes as Record<string, unknown>;
+              const globalId = toTrajectGlobalId(attributes);
+              const fallbackObjectId = Number(attributes.OBJECTID ?? 0);
+              const storedTraject = trajectByGlobalIdRef.current.get(globalId);
+              return {
+                globalId,
+                trajectCode:
+                  storedTraject?.trajectCode ||
+                  String(attributes.traject_code ?? "") ||
+                  `Traject ${fallbackObjectId}`,
+                status:
+                  storedTraject?.status ??
+                  Number(attributes.status ?? createdContext.statusOptions[0]?.value ?? 1),
+                shapeArea:
+                  storedTraject?.shapeArea ??
+                  (typeof attributes.Shape__Area === "number" ? attributes.Shape__Area : null),
+              };
+            })
+            .filter((candidate) => Boolean(candidate.globalId))
+            .filter(
+              (candidate, index, all) =>
+                all.findIndex((item) => item.globalId === candidate.globalId) === index
+            )
+            .sort(
+              (left, right) =>
+                (left.shapeArea ?? Number.MAX_SAFE_INTEGER) -
+                  (right.shapeArea ?? Number.MAX_SAFE_INTEGER) ||
+                left.trajectCode.localeCompare(right.trajectCode, "nl")
+            );
+
+          if (trajectHits.length > 1) {
+            setBorPopup(null);
+            setSelectionChoices(
+              trajectHits.map((candidate) => ({
+                ...candidate,
+                left: Math.min(event.x + 14, window.innerWidth - 320),
+                top: Math.min(event.y + 14, window.innerHeight - 280),
+              }))
+            );
+            return;
+          }
+
+          if (trajectHits.length === 1) {
+            setBorPopup(null);
+            handleSelectTraject(trajectHits[0].globalId, "map");
+            return;
+          }
+
+          const borHit = hitTest.results.find(
+            (result): result is ViewHitTestResult["results"][number] & { graphic: Graphic } =>
+              isGraphicHit(result) &&
+              createdContext.borLayers.some((layer) => layer === result.graphic.layer)
           );
 
-          if (!trajectHit || !("graphic" in trajectHit)) {
-            const borHit = hitTest.results.find((result) => {
-              if (!("graphic" in result)) {
-                return false;
-              }
-
-              const layer = result.graphic.layer;
-              return layer?.type === "feature" && layer !== createdContext.trajectLayer;
-            });
-
-            if (borHit) {
-              const borFeature = toBorFeatureSelection(borHit);
-
-              if (borFeature) {
-                highlightRef.current?.remove();
-                setZoomTargetGlobalId(null);
-                selectTraject(null, "map");
-                setDraftValues(null);
-                setSelectedBorFeature(borFeature);
-                setAttributeDrawerOpen(true);
-                setEditingMode("idle");
+          if (borHit) {
+            if (activeSelectedGlobalId || activePendingGeometryEdits) {
+              if (!canDiscardCurrentSelection()) {
                 return;
               }
+              resetReviewState();
             }
 
-            highlightRef.current?.remove();
-            setZoomTargetGlobalId(null);
-            selectTraject(null, "map");
-            setDraftValues(null);
-            setSelectedBorFeature(null);
-            setAttributeDrawerOpen(false);
-            setEditingMode("idle");
+            setSelectionChoices(null);
+            const borLayer = borHit.graphic.layer;
+            const layerTitle =
+              borLayer && "title" in borLayer && typeof borLayer.title === "string"
+                ? borLayer.title
+                : "BOR object";
+            setBorPopup(
+              buildBorPopupState(
+                borHit.graphic.attributes as Record<string, unknown>,
+                layerTitle,
+                event.x,
+                event.y
+              )
+            );
+            setBorPopupExpanded(false);
             return;
           }
 
-          setSelectedBorFeature(null);
-          const globalId = toTrajectGlobalId(
-            trajectHit.graphic.attributes as Record<string, unknown>
-          );
-          if (!globalId) {
-            return;
+          if (activeSelectedGlobalId || activePendingGeometryEdits) {
+            if (!canDiscardCurrentSelection()) {
+              return;
+            }
+
+            resetReviewState();
           }
 
-          const storedTraject = trajectByGlobalIdRef.current.get(globalId);
-          setDraftValues({
-            trajectCode:
-              storedTraject?.trajectCode ??
-              String(trajectHit.graphic.attributes.traject_code ?? ""),
-            status: storedTraject?.status ?? Number(trajectHit.graphic.attributes.status ?? 1),
-            opmerking:
-              storedTraject?.opmerking ??
-              String(trajectHit.graphic.attributes.opmerking ?? ""),
-          });
-          setZoomTargetGlobalId(null);
-          selectTraject(globalId, "map");
-          setAttributeDrawerOpen(true);
-          setEditingMode("attributes");
+          setBorPopup(null);
+          setSelectionChoices(null);
         });
 
         const createHandle = createdContext.sketchViewModel.on("create", (event) => {
-          const createdGraphic = event.graphic;
-
-          if (event.state === "complete" && createdGraphic?.geometry) {
+          if (event.state === "complete" && event.graphic?.geometry) {
             setPendingGeometryEdits({
               mode: "create",
-              geometry: createdGraphic.geometry,
+              geometry: event.graphic.geometry,
             });
-            setSelectedBorFeature(null);
             setDraftValues(
               toFormValues(null, createdContext.statusOptions[0]?.value ?? 1)
             );
             setEditingMode("attributes");
-            setAttributeDrawerOpen(true);
           }
 
           if (event.state === "complete") {
@@ -499,9 +896,7 @@ export function MapTrajectControlePage() {
               mode: "reshape",
               geometry: event.graphics[0].geometry,
             });
-            setSelectedBorFeature(null);
             setEditingMode("attributes");
-            setAttributeDrawerOpen(true);
           }
 
           if (event.state === "complete" || event.aborted) {
@@ -530,69 +925,25 @@ export function MapTrajectControlePage() {
 
     return () => {
       active = false;
-      highlightRef.current?.remove();
       void cleanupPromise?.then((cleanup) => cleanup?.());
       localContext?.view.destroy();
     };
   }, [
     selectTraject,
-    setAttributeDrawerOpen,
     setEditingMode,
+    setLayerVisibility,
+    setMapViewState,
     setPendingGeometryEdits,
     setZoomTargetGlobalId,
-    setMapViewState,
-    setLayerVisibility,
   ]);
-
-  useEffect(() => {
-    if (!mapContext?.view || !selectedGlobalId) {
-      highlightRef.current?.remove();
-      return;
-    }
-
-    let active = true;
-    const currentContext = mapContext;
-    const currentGlobalId = selectedGlobalId;
-
-    async function syncSelection() {
-      const layerView = (await currentContext.view.whenLayerView(
-        currentContext.trajectLayer
-      )) as FeatureLayerView;
-      const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
-        currentContext.trajectLayer,
-        currentGlobalId
-      );
-
-      if (!active || !graphic) {
-        return;
-      }
-
-      highlightRef.current?.remove();
-      highlightRef.current = layerView.highlight(graphic);
-
-      if (zoomTargetGlobalId === currentGlobalId && graphic.geometry) {
-        await currentContext.view.goTo(
-          { target: graphic.geometry },
-          { duration: 700 }
-        );
-        setZoomTargetGlobalId(null);
-      }
-    }
-
-    void syncSelection();
-
-    return () => {
-      active = false;
-    };
-  }, [mapContext, selectedGlobalId, setZoomTargetGlobalId, zoomTargetGlobalId]);
 
   useEffect(() => {
     if (!mapContext) {
       return;
     }
 
-    const currentContext = mapContext;
     let active = true;
+    const currentContext = mapContext;
 
     async function syncRenderer() {
       await arcgisTrajectService.setTrajectRenderer(
@@ -654,7 +1005,168 @@ export function MapTrajectControlePage() {
     };
   }, [filteredTrajecten, mapContext]);
 
-  async function handleSave(values: AttributeFormValues) {
+  useEffect(() => {
+    if (!mapContext?.view || !selectedGlobalId || zoomTargetGlobalId !== selectedGlobalId) {
+      return;
+    }
+
+    const geometry = (pendingGeometryEdits?.geometry ?? selectedTraject?.geometry ?? null) as
+      | GeometryWithoutMeshUnion
+      | null;
+    if (!geometry) {
+      return;
+    }
+
+    void mapContext.view
+      .goTo(geometry, { duration: 700 })
+      .finally(() => setZoomTargetGlobalId(null));
+  }, [
+    mapContext,
+    pendingGeometryEdits?.geometry,
+    selectedGlobalId,
+    selectedTraject?.geometry,
+    setZoomTargetGlobalId,
+    zoomTargetGlobalId,
+  ]);
+
+  useEffect(() => {
+    if (!mapContext) {
+      return;
+    }
+
+    const currentContext = mapContext;
+    let active = true;
+
+    async function syncSelectionPresentation() {
+      clearReviewHighlight();
+      currentContext.reviewSelectionLayer.removeAll();
+
+      if (pendingGeometryEdits?.geometry) {
+        currentContext.reviewSelectionLayer.addMany(
+          createTrajectSelectionGraphics(
+            pendingGeometryEdits.geometry as GeometryWithoutMeshUnion,
+            {
+              mode: "draft",
+            }
+          )
+        );
+        await applyReviewEffects(currentContext, pendingGeometryEdits.geometry as GeometryWithoutMeshUnion, null);
+        return;
+      }
+
+      if (selectedTraject?.objectId) {
+        await applyReviewEffects(
+          currentContext,
+          (selectedTraject.geometry ?? null) as GeometryWithoutMeshUnion,
+          selectedTraject.objectId
+        );
+
+        const trajectLayerView = (await currentContext.view.whenLayerView(
+          currentContext.trajectLayer
+        )) as FeatureLayerView;
+
+        if (!active) {
+          return;
+        }
+
+        reviewHighlightHandleRef.current = trajectLayerView.highlight([selectedTraject.objectId]);
+
+        const selectionGeometry = await resolveReviewGeometry(currentContext, {
+          pendingGeometry: null,
+          selectedGlobalId: selectedTraject.globalId,
+          fallbackGeometry: (selectedTraject.geometry ?? null) as GeometryWithoutMeshUnion | null,
+          geometryCache: exactGeometryCacheRef.current,
+        });
+
+        if (!active || !selectionGeometry) {
+          return;
+        }
+
+        currentContext.reviewSelectionLayer.addMany(
+          createTrajectSelectionGraphics(selectionGeometry, {
+            mode: "selected",
+          })
+        );
+        return;
+      }
+
+      await clearReviewPresentation(currentContext);
+    }
+
+    void syncSelectionPresentation();
+
+    return () => {
+      active = false;
+      clearReviewHighlight();
+    };
+  }, [mapContext, pendingGeometryEdits?.geometry, selectedTraject?.geometry, selectedTraject?.objectId]);
+
+  useEffect(() => {
+    if (!mapContext) {
+      return;
+    }
+
+    const currentContext = mapContext;
+    const requestId = reviewRequestIdRef.current + 1;
+    reviewRequestIdRef.current = requestId;
+    let active = true;
+
+    async function syncReview() {
+      const inspectionGeometry = await resolveReviewGeometry(currentContext, {
+        pendingGeometry: (pendingGeometryEdits?.geometry ?? null) as GeometryWithoutMeshUnion | null,
+        selectedGlobalId: pendingGeometryEdits?.mode === "create" ? null : selectedGlobalId,
+        fallbackGeometry: (selectedTraject?.geometry ?? null) as GeometryWithoutMeshUnion | null,
+        geometryCache: exactGeometryCacheRef.current,
+      });
+
+      if (!active || reviewRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (!inspectionGeometry) {
+        setReviewSummary(null);
+        await clearReviewPresentation(currentContext);
+        return;
+      }
+
+      const reviewCacheKey = pendingGeometryEdits?.mode === "create" ? null : selectedGlobalId;
+      const cachedReview = reviewCacheKey ? reviewSummaryCacheRef.current.get(reviewCacheKey) : null;
+
+      const nextReview =
+        cachedReview ??
+        (await buildTrajectReview({
+          trajectLayer: currentContext.trajectLayer,
+          geometry: inspectionGeometry,
+          selectedGlobalId: pendingGeometryEdits?.mode === "create" ? null : selectedGlobalId,
+          referenceTraject: selectedTraject,
+        }));
+
+      if (reviewCacheKey && !cachedReview) {
+        reviewSummaryCacheRef.current.set(reviewCacheKey, nextReview);
+      }
+
+      if (!active || reviewRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      currentContext.reviewDiagnosticLayer.removeAll();
+      currentContext.reviewDiagnosticLayer.addMany(createOverlapDiagnosticsGraphics(nextReview));
+      setReviewSummary(nextReview);
+    }
+
+    void syncReview();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    mapContext,
+    pendingGeometryEdits,
+    selectedGlobalId,
+    selectedTraject,
+  ]);
+
+  async function handleSave(options?: { advanceToNext?: boolean }) {
     if (!mapContext) {
       return;
     }
@@ -671,13 +1183,15 @@ export function MapTrajectControlePage() {
       const preservedCenter = mapContext.view.center?.clone() ?? null;
       const preservedZoom = mapContext.view.zoom;
       const preservedRotation = mapContext.view.rotation;
-      setZoomTargetGlobalId(null);
+      const nextGlobalId = options?.advanceToNext ? nextTrajectId : null;
+      exactGeometryCacheRef.current.clear();
+      reviewSummaryCacheRef.current.clear();
 
       if (pendingGeometryEdits?.mode === "create") {
         const createdSpatial = await arcgisTrajectService.saveNewTraject(
           mapContext.trajectLayer,
           pendingGeometryEdits.geometry,
-          values
+          reviewFormValues
         );
         upsertTraject(createdSpatial);
         selectTraject(createdSpatial.globalId, "map");
@@ -685,15 +1199,10 @@ export function MapTrajectControlePage() {
         const updatedSpatial = await arcgisTrajectService.updateTraject(
           mapContext.trajectLayer,
           selectedTraject,
-          values,
+          reviewFormValues,
           pendingGeometryEdits?.geometry
         );
         upsertTraject(updatedSpatial);
-        setDraftValues({
-          trajectCode: updatedSpatial.trajectCode,
-          status: updatedSpatial.status,
-          opmerking: updatedSpatial.opmerking,
-        });
       }
 
       if (preservedCenter) {
@@ -706,23 +1215,17 @@ export function MapTrajectControlePage() {
         mapContext.view.rotation = preservedRotation;
       }
 
-      setDraftValues(null);
       setPendingGeometryEdits(null);
       setEditingMode("idle");
-      setAttributeDrawerOpen(false);
+
+      if (nextGlobalId) {
+        selectTrajectForReview(nextGlobalId, "table", { zoom: true });
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Opslaan is mislukt.");
     } finally {
       setSaving(false);
     }
-  }
-
-  async function handlePlanningUpdate(
-    workId: string,
-    updates: Partial<Omit<PlanningRegistration, "workId">>
-  ) {
-    const registration = await mockPlanningService.saveRegistration(workId, updates);
-    updatePlanningItem(workId, registration);
   }
 
   async function handleDeleteTraject() {
@@ -739,16 +1242,11 @@ export function MapTrajectControlePage() {
     setError(null);
 
     try {
+      exactGeometryCacheRef.current.clear();
+      reviewSummaryCacheRef.current.clear();
       await arcgisTrajectService.deleteTraject(mapContext.trajectLayer, selectedTraject);
-      highlightRef.current?.remove();
       removeTraject(selectedTraject.globalId);
-      setSelectedBorFeature(null);
-      setDraftValues(null);
-      setPendingGeometryEdits(null);
-      setZoomTargetGlobalId(null);
-      setEditingMode("idle");
-      setAttributeDrawerOpen(false);
-      selectTraject(null, "map");
+      resetReviewState({ clearBorPopup: true });
     } catch (deleteError) {
       setError(
         deleteError instanceof Error ? deleteError.message : "Verwijderen is mislukt."
@@ -768,6 +1266,10 @@ export function MapTrajectControlePage() {
       return;
     }
 
+    if (!canDiscardUnsavedChanges()) {
+      return;
+    }
+
     const graphic = await arcgisTrajectService.queryGraphicByGlobalId(
       mapContext.trajectLayer,
       selectedTraject.globalId
@@ -781,8 +1283,8 @@ export function MapTrajectControlePage() {
     mapContext.sketchLayer.removeAll();
     const editableGraphic = graphic.clone();
     mapContext.sketchLayer.add(editableGraphic);
+    setPendingGeometryEdits(null);
     setEditingMode("reshape");
-    setAttributeDrawerOpen(false);
     mapContext.sketchViewModel.update([editableGraphic], { tool: "reshape" });
   }
 
@@ -796,11 +1298,13 @@ export function MapTrajectControlePage() {
       return;
     }
 
+    if (!canDiscardUnsavedChanges()) {
+      return;
+    }
+
+    resetReviewState({ clearBorPopup: true });
     setDraftValues(null);
-    selectTraject(null, "map");
-    setPendingGeometryEdits(null);
     setEditingMode("create");
-    setAttributeDrawerOpen(false);
     mapContext.sketchViewModel.create("polygon");
   }
 
@@ -819,6 +1323,8 @@ export function MapTrajectControlePage() {
     }
   }
 
+  const reviewPanelOpen = Boolean(selectedTraject || pendingGeometryEdits);
+
   return (
     <div className="flex h-full min-h-0">
       <MapSidebar
@@ -833,6 +1339,7 @@ export function MapTrajectControlePage() {
         selectedStatuses={mapFilters.statuses}
         selectedBronlagen={mapFilters.bronlagen}
         onlyNewGeometry={mapFilters.onlyNewGeometry}
+        onToggleLayer={toggleLayer}
         onObjectCountMaxChange={(value) =>
           setMapFilters((current) => ({
             ...current,
@@ -873,61 +1380,6 @@ export function MapTrajectControlePage() {
 
         {mapContext ? (
           <>
-            <div className="glass-panel absolute left-3 top-20 z-20 rounded-[10px] p-2">
-              <Button
-                variant={layerPanelOpen ? "secondary" : "outline"}
-                className="h-9 w-9 px-0"
-                onClick={() => setLayerPanelOpen((current) => !current)}
-                aria-label="Kaartlagen"
-                title="Kaartlagen"
-              >
-                <Layers3 className="h-4 w-4" />
-              </Button>
-            </div>
-            {layerPanelOpen ? (
-              <div className="glass-panel absolute left-3 top-32 z-20 w-[260px] rounded-card p-3">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[12px] font-semibold text-text">Kaartlagen</div>
-                  <Button
-                    variant="ghost"
-                    className="h-8 w-8 px-0"
-                    onClick={() => setLayerPanelOpen(false)}
-                    aria-label="Sluit lagenpaneel"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {layerItems.map((layer) => (
-                    <div
-                      key={layer.id}
-                      className="flex items-center gap-3 rounded-md border border-border bg-surfaceAlt/80 px-3 py-2"
-                    >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-accentSoft text-accentStrong">
-                        <Layers3 className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[12px] text-text">{layer.title}</div>
-                        <div className="text-[10px] uppercase tracking-[0.1em] text-textMuted">
-                          {layer.type}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className={`rounded-full px-2 py-1 text-[10px] font-semibold transition ${
-                          layer.visible
-                            ? "bg-accentSoft text-accentStrong"
-                            : "bg-surface text-textMuted"
-                        }`}
-                        onClick={() => toggleLayer(layer.id, !layer.visible)}
-                      >
-                        {layer.visible ? "Aan" : "Uit"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <BasemapSwitcher
               basemaps={mapContext.basemapOptions}
               activeId={activeBasemapId}
@@ -941,6 +1393,7 @@ export function MapTrajectControlePage() {
                 mapContext.map.basemap = basemap.basemap;
               }}
             />
+
             <MapToolbar
               disabledAdd={!trajectLayerEditingEnabled}
               disabledEdit={!selectedTraject || !trajectLayerEditingEnabled}
@@ -958,6 +1411,7 @@ export function MapTrajectControlePage() {
               }}
               onRendererModeChange={setRendererMode}
             />
+
             <AiAssistantOverlay view={mapContext.view} />
           </>
         ) : (
@@ -969,6 +1423,185 @@ export function MapTrajectControlePage() {
           </div>
         )}
 
+        {selectionChoices?.length ? (
+          <div
+            className="glass-panel absolute z-30 w-[300px] rounded-card p-3"
+            style={{
+              left: selectionChoices[0].left,
+              top: selectionChoices[0].top,
+            }}
+          >
+            <div className="mb-3 text-[12px] font-semibold text-text">
+              Meerdere trajecten op dit punt
+            </div>
+            <div className="space-y-2">
+              {selectionChoices.map((choice) => (
+                <button
+                  key={choice.globalId}
+                  type="button"
+                  className="w-full rounded-card border border-border bg-surfaceAlt/80 px-3 py-2 text-left transition hover:border-accent/40 hover:bg-accentSoft/25"
+                  onClick={() => handleSelectTraject(choice.globalId, "map")}
+                >
+                  <div className="text-[12px] font-medium text-text">{choice.trajectCode}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                    Status {choice.status} · {choice.shapeArea ? `${choice.shapeArea.toLocaleString("nl-NL")} m²` : "oppervlak onbekend"}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Button variant="ghost" className="h-8 px-2" onClick={() => setSelectionChoices(null)}>
+                Sluiten
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {reviewPanelOpen ? (
+          <TrajectReviewPanel
+            open={reviewPanelOpen}
+            selectedTraject={selectedTraject}
+            pendingMode={pendingGeometryEdits?.mode ?? null}
+            draftValues={reviewFormValues}
+            statusOptions={statusOptions}
+            review={reviewSummary}
+            saving={saving}
+            deleting={deleting}
+            hasUnsavedChanges={hasUnsavedChanges}
+            canSelectPrevious={Boolean(previousTrajectId)}
+            canSelectNext={Boolean(nextTrajectId)}
+            hasNextPending={Boolean(nextPendingTrajectId)}
+            onDraftChange={updateDraftValue}
+            onSave={() => {
+              void handleSave();
+            }}
+            onSaveAndNext={() => {
+              void handleSave({ advanceToNext: true });
+            }}
+            onClose={handleCloseReview}
+            onDelete={() => {
+              void handleDeleteTraject();
+            }}
+            onSelectPrevious={() => {
+              const historyTarget = moveReviewHistory(-1);
+              if (historyTarget) {
+                handleSelectTraject(historyTarget, "table", {
+                  zoom: true,
+                  recordHistory: false,
+                });
+              } else if (previousTrajectId) {
+                handleSelectTraject(previousTrajectId, "table", { zoom: true });
+              }
+            }}
+            onSelectNext={() => {
+              const historyTarget = moveReviewHistory(1);
+              if (historyTarget) {
+                handleSelectTraject(historyTarget, "table", {
+                  zoom: true,
+                  recordHistory: false,
+                });
+              } else if (nextTrajectId) {
+                handleSelectTraject(nextTrajectId, "table", { zoom: true });
+              }
+            }}
+            onSelectNextPending={() => {
+              if (nextPendingTrajectId) {
+                handleSelectTraject(nextPendingTrajectId, "table", { zoom: true });
+              }
+            }}
+            onSelectOverlapTraject={(globalId) =>
+              handleSelectTraject(globalId, "map", { zoom: true })
+            }
+          />
+        ) : null}
+
+        {borPopup ? (
+          <div
+            className="glass-panel absolute z-30 w-[390px] max-w-[calc(100vw-24px)] rounded-card p-4"
+            style={{ left: borPopup.left, top: borPopup.top }}
+          >
+            <div
+              className="mb-4 flex cursor-grab items-start justify-between gap-4 active:cursor-grabbing"
+              onMouseDown={(event) => {
+                if (event.button !== 0) {
+                  return;
+                }
+
+                const target = event.target as HTMLElement | null;
+                if (target?.closest("button")) {
+                  return;
+                }
+
+                event.preventDefault();
+                borPopupDragOffsetRef.current = {
+                  x: event.clientX - borPopup.left,
+                  y: event.clientY - borPopup.top,
+                };
+              }}
+            >
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-textMuted">
+                  {borPopup.layerTitle}
+                </div>
+                <div className="mt-1 truncate text-[16px] font-semibold text-text">
+                  {borPopup.displayTitle}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                className="h-8 w-8 px-0"
+                onClick={() => setBorPopup(null)}
+                aria-label="Sluit BOR-popup"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="grid gap-3 rounded-card border border-border bg-surfaceAlt/70 p-3">
+              {borPopup.primaryAttributes.map((attribute) => (
+                <div key={attribute.key}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                    {attribute.label}
+                  </div>
+                  <div className="mt-1 break-words text-[13px] font-medium text-text">
+                    {attribute.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-card border border-border bg-surfaceAlt/70 px-3 py-2 text-left transition hover:border-accent/40 hover:bg-accentSoft/25"
+                onClick={() => setBorPopupExpanded((current) => !current)}
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                  Overige attributen
+                </span>
+                <span className="text-[11px] text-textDim">
+                  {borPopupExpanded ? "Verbergen" : "Tonen"}
+                </span>
+              </button>
+
+              {borPopupExpanded ? (
+                <div className="app-scrollbar mt-2 max-h-[260px] space-y-3 overflow-y-auto rounded-card border border-border bg-surfaceAlt/70 p-3">
+                  {borPopup.secondaryAttributes.map((attribute) => (
+                    <div key={attribute.key}>
+                      <div className="text-[10px] uppercase tracking-[0.12em] text-textMuted">
+                        {attribute.label}
+                      </div>
+                      <div className="mt-1 break-words text-[12px] text-text">
+                        {attribute.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {error ? (
           <div className="glass-panel absolute bottom-3 left-3 z-20 max-w-md rounded-card px-4 py-3 text-[12px] text-danger">
             <div className="flex items-start gap-2">
@@ -977,31 +1610,6 @@ export function MapTrajectControlePage() {
             </div>
           </div>
         ) : null}
-
-        <AttributeDrawer
-          open={attributeDrawerOpen}
-          onOpenChange={(open) => {
-            setAttributeDrawerOpen(open);
-            if (!open) {
-              setSelectedBorFeature(null);
-            }
-            if (!open && pendingGeometryEdits?.mode === "create") {
-              setDraftValues(null);
-              setPendingGeometryEdits(null);
-              setEditingMode("idle");
-            }
-          }}
-          selectedTraject={selectedTraject}
-          selectedBorFeature={selectedBorFeature}
-          defaultValues={defaultFormValues}
-          statusOptions={mapContext?.statusOptions ?? []}
-          planningItems={planningItems}
-          saving={saving}
-          deleting={deleting}
-          onSubmit={handleSave}
-          onDeleteTraject={handleDeleteTraject}
-          onPlanningUpdate={handlePlanningUpdate}
-        />
       </section>
     </div>
   );
