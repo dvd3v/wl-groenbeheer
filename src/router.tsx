@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
+import { ConfigurationPage } from "./pages/configuration-page";
 import { DatamodelPage } from "./pages/datamodel-page";
 import { JaarplanPage } from "./pages/jaarplan-page";
 import { MapTrajectControlePage } from "./pages/map-traject-controle-page";
-import { MapPage } from "./pages/map-page";
 import { arcgisAuthService } from "./services/arcgis-auth-service";
 import { arcgisJaarplanService } from "./services/arcgis-jaarplan-service";
 import { arcgisTrajectService } from "./services/arcgis-traject-service";
-import { mockPlanningService } from "./services/mock-planning-service";
 import { useAppStore } from "./store/app-store";
 
 function LoadingScreen({ message }: { message: string }) {
@@ -56,13 +55,12 @@ function ProtectedApp() {
 
         const jaarplanBootstrapPromise = arcgisJaarplanService.loadBootstrap();
         const trajecten = await arcgisTrajectService.queryAllTrajecten();
-        const planningItems = await mockPlanningService.getAll(trajecten);
 
         if (cancelled) {
           return;
         }
 
-        setBootstrapData(trajecten, planningItems);
+        setBootstrapData(trajecten, []);
         setState("ready");
 
         void jaarplanBootstrapPromise
@@ -131,9 +129,10 @@ export function AppRouter() {
     <Routes>
       <Route element={<ProtectedApp />}>
         <Route path="/" element={<Navigate to="/map-traject-controle" replace />} />
-        <Route path="/map" element={<MapPage />} />
+        <Route path="/map" element={<Navigate to="/map-traject-controle" replace />} />
         <Route path="/map-traject-controle" element={<MapTrajectControlePage />} />
         <Route path="/jaarplan" element={<JaarplanPage />} />
+        <Route path="/configuratie" element={<ConfigurationPage />} />
         <Route path="/datamodel" element={<DatamodelPage />} />
       </Route>
     </Routes>

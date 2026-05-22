@@ -172,6 +172,11 @@ function buildBorPopupState(
 }
 
 function toTrajectGlobalId(attributes: Record<string, unknown>): string {
+  const globalId = String(attributes.GlobalID ?? attributes.globalid ?? "").trim();
+  if (globalId) {
+    return globalId;
+  }
+
   const guid = String(attributes.guid ?? "").trim();
   if (guid) {
     return guid;
@@ -186,6 +191,11 @@ function toFormValues(traject: TrajectRecord | null, statusFallback: number): At
     trajectCode: traject?.trajectCode ?? "",
     status: traject?.status ?? statusFallback,
     opmerking: traject?.opmerking ?? "",
+    naam: traject?.naam ?? "",
+    aanpassenDoor: traject?.aanpassenDoor ?? "",
+    functie: traject?.functie ?? "",
+    uitvoerderOnderhoud: traject?.uitvoerderOnderhoud ?? "",
+    bodemklasse: traject?.bodemklasse ?? "",
   };
 }
 
@@ -470,7 +480,12 @@ export function MapTrajectControlePage() {
     return (
       draftValues.trajectCode !== selectedTraject.trajectCode ||
       draftValues.status !== selectedTraject.status ||
-      draftValues.opmerking !== selectedTraject.opmerking
+      draftValues.opmerking !== selectedTraject.opmerking ||
+      draftValues.naam !== selectedTraject.naam ||
+      draftValues.aanpassenDoor !== selectedTraject.aanpassenDoor ||
+      draftValues.functie !== selectedTraject.functie ||
+      draftValues.uitvoerderOnderhoud !== selectedTraject.uitvoerderOnderhoud ||
+      draftValues.bodemklasse !== selectedTraject.bodemklasse
     );
   }, [draftValues, pendingGeometryEdits, selectedTraject]);
 
@@ -632,9 +647,14 @@ export function MapTrajectControlePage() {
   }, [
     pendingGeometryEdits,
     selectedTraject?.globalId,
-    selectedTraject?.opmerking,
+                selectedTraject?.opmerking,
+    selectedTraject?.aanpassenDoor,
+    selectedTraject?.bodemklasse,
+    selectedTraject?.functie,
+    selectedTraject?.naam,
     selectedTraject?.status,
     selectedTraject?.trajectCode,
+    selectedTraject?.uitvoerderOnderhoud,
     statusOptions,
   ]);
 
@@ -1464,6 +1484,14 @@ export function MapTrajectControlePage() {
             pendingMode={pendingGeometryEdits?.mode ?? null}
             draftValues={reviewFormValues}
             statusOptions={statusOptions}
+            fieldOptions={
+              mapContext?.trajectFieldOptions ?? {
+                aanpassenDoor: [],
+                functie: [],
+                uitvoerderOnderhoud: [],
+                bodemklasse: [],
+              }
+            }
             review={reviewSummary}
             saving={saving}
             deleting={deleting}

@@ -227,7 +227,7 @@ export function JaarplanFilterPanel({
                 </label>
 
                 <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Steekproef status</span>
+                  <span className="text-[11px] text-textDim">Status steekproef</span>
                   <NativeSelect
                     value={filters.steekproefStatus}
                     onChange={(event) => onFilterChange("steekproefStatus", event.target.value)}
@@ -244,19 +244,51 @@ export function JaarplanFilterPanel({
             ) : null}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-card border border-border bg-white px-4 py-3">
-            <Switch
-              checked={filters.hasMeasuresOnly}
-              onCheckedChange={(checked) => onFilterChange("hasMeasuresOnly", checked)}
-            />
-            <div>
-              <div className="text-[12px] font-medium text-text">
-                Alleen trajecten met zichtbare maatregelen
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
+              <Switch
+                checked={filters.hasMeasuresOnly}
+                onCheckedChange={(checked) => onFilterChange("hasMeasuresOnly", checked)}
+              />
+              <div>
+                <div className="text-[12px] font-medium text-text">
+                  Alleen trajecten met zichtbare maatregelen
+                </div>
+                <div className="text-[11px] text-textMuted">
+                  Beperk de lijst tot trajecten met maatregelen binnen de filters.
+                </div>
               </div>
-              <div className="text-[11px] text-textMuted">
-                Houd de tabel en kaart beperkt tot trajecten met maatregelen binnen de huidige filterselectie.
+            </label>
+
+            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
+              <Switch
+                checked={filters.correctOnly}
+                onCheckedChange={(checked) => onFilterChange("correctOnly", checked)}
+              />
+              <div>
+                <div className="text-[12px] font-medium text-text">
+                  Alleen status Correct
+                </div>
+                <div className="text-[11px] text-textMuted">
+                  Toon alleen trajecten die in de trajectcontrole correct zijn.
+                </div>
               </div>
-            </div>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
+              <Switch
+                checked={filters.conceptGereedOnly}
+                onCheckedChange={(checked) => onFilterChange("conceptGereedOnly", checked)}
+              />
+              <div>
+                <div className="text-[12px] font-medium text-text">
+                  Alleen concept gereed
+                </div>
+                <div className="text-[11px] text-textMuted">
+                  Toon trajecten waarvan de planning als concept gereed staat.
+                </div>
+              </div>
+            </label>
           </div>
         </>
       ) : null}

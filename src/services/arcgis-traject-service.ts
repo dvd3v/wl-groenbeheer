@@ -2,6 +2,7 @@ import Graphic from "@arcgis/core/Graphic.js";
 import type Geometry from "@arcgis/core/geometry/Geometry.js";
 import Map from "@arcgis/core/Map.js";
 import Basemap from "@arcgis/core/Basemap.js";
+import esriRequest from "@arcgis/core/request.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
 import GroupLayer from "@arcgis/core/layers/GroupLayer.js";
 import WMTSLayer from "@arcgis/core/layers/WMTSLayer.js";
@@ -18,6 +19,7 @@ import SimpleFillSymbol from "@arcgis/core/symbols/SimpleFillSymbol.js";
 import SimpleLineSymbol from "@arcgis/core/symbols/SimpleLineSymbol.js";
 import type {
   AttributeFormValues,
+  JaarplanDomainOption,
   LayerToggleItem,
   LegendItem,
   ModelTypeOption,
@@ -26,10 +28,7 @@ import type {
   TrajectRendererMode,
 } from "../types/app";
 import { FALLBACK_MODEL_TYPES, STATUS_OPTIONS } from "../data/datamodel";
-
-const FEATURE_LAYER_URL =
-  import.meta.env.VITE_FEATURE_LAYER_URL?.trim() ||
-  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/Jaarplan_Trajecten/FeatureServer/0";
+import { getConfiguredFeatureServiceUrl } from "./layer-config-service";
 
 const GISIB_BOR_MAPSERVER_URL =
   "https://utility.arcgis.com/usrsvcs/servers/73fc6147aa1d457fa19f50598a9e1001/rest/services/Groenbeheer/GISIB_BOR/MapServer";
@@ -86,6 +85,66 @@ export interface HeadlessMapContext {
   basemapOptions: BasemapOption[];
   statusOptions: StatusOption[];
   modelTypeOptions: ModelTypeOption[];
+  trajectFieldOptions: {
+    aanpassenDoor: JaarplanDomainOption[];
+    functie: JaarplanDomainOption[];
+    uitvoerderOnderhoud: JaarplanDomainOption[];
+    bodemklasse: JaarplanDomainOption[];
+  };
+}
+
+interface FeatureServiceResourceSummary {
+  id: number;
+  name: string;
+}
+
+interface FeatureServiceMetadata {
+  layers?: FeatureServiceResourceSummary[];
+  tables?: FeatureServiceResourceSummary[];
+}
+
+function normalizeFeatureServiceUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "").replace(/\/\d+$/, "");
+}
+
+function toResourceUrl(serviceUrl: string, resourceId: number): string {
+  return `${normalizeFeatureServiceUrl(serviceUrl)}/${resourceId}`;
+}
+
+function findNamedResource(
+  resources: FeatureServiceResourceSummary[] | undefined,
+  candidates: string[]
+): FeatureServiceResourceSummary | null {
+  if (!resources?.length) {
+    return null;
+  }
+
+  const loweredCandidates = candidates.map((candidate) => candidate.toLowerCase());
+  const exactOrContains = resources.find((resource) => {
+    const name = resource.name.toLowerCase();
+    return loweredCandidates.some((candidate) => name.includes(candidate));
+  });
+
+  return exactOrContains ?? resources[0] ?? null;
+}
+
+function toCodedValueOptions(domain: unknown): JaarplanDomainOption[] {
+  if (!domain || typeof domain !== "object" || !("codedValues" in domain)) {
+    return [];
+  }
+
+  return (
+    (domain as { codedValues?: Array<{ code: string | number; name: string }> })
+      .codedValues ?? []
+  ).map((codedValue) => ({
+    value: String(codedValue.code),
+    label: codedValue.name,
+    rawValue: codedValue.code,
+  }));
+}
+
+function getFieldOptions(layer: FeatureLayer, fieldName: string): JaarplanDomainOption[] {
+  return toCodedValueOptions(layer.fields.find((field) => field.name === fieldName)?.domain);
 }
 
 function createPdokBasemap(layerName: string, title: string): Basemap {
@@ -234,6 +293,11 @@ function extractColor(symbol: Graphic["symbol"] | null | undefined): string | nu
 }
 
 function toTrajectGlobalId(attributes: Record<string, unknown>): string {
+  const globalId = String(attributes.GlobalID ?? attributes.globalid ?? "").trim();
+  if (globalId) {
+    return globalId;
+  }
+
   const guid = String(attributes.guid ?? "").trim();
   if (guid) {
     return guid;
@@ -253,6 +317,11 @@ function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
     globalId,
     guid,
     trajectCode: String(graphic.attributes.traject_code ?? ""),
+    naam: String(graphic.attributes.naam ?? ""),
+    aanpassenDoor: String(graphic.attributes.aanpassen_door ?? ""),
+    functie: String(graphic.attributes.functie ?? ""),
+    uitvoerderOnderhoud: String(graphic.attributes.uitvoerder_onderhoud ?? ""),
+    bodemklasse: String(graphic.attributes.bodemklasse ?? ""),
     typeCodering: String(graphic.attributes.type_codering ?? ""),
     objectCount:
       typeof graphic.attributes.object_count === "number"
@@ -277,20 +346,97 @@ function isLayerEditingEnabled(layer: FeatureLayer): boolean {
   return layer.editingEnabled && layer.capabilities?.operations?.supportsEditing !== false;
 }
 
+function formatArcgisError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const candidate = error as {
+      message?: string;
+      name?: string;
+      details?: { messages?: string[]; httpStatus?: number; url?: string };
+    };
+    const parts = [
+      candidate.name,
+      candidate.message,
+      candidate.details?.messages?.join(" "),
+      candidate.details?.httpStatus ? `HTTP ${candidate.details.httpStatus}` : "",
+    ].filter(Boolean);
+
+    if (parts.length) {
+      return parts.join(" - ");
+    }
+  }
+
+  return "ArcGIS gaf geen detailmelding terug.";
+}
+
 export class ArcgisTrajectService {
+  private resourceInfoPromise: Promise<{
+    serviceUrl: string;
+    trajectLayerUrl: string;
+  }> | null = null;
+
+  private async resolveResourceInfo(): Promise<{
+    serviceUrl: string;
+    trajectLayerUrl: string;
+  }> {
+    if (!this.resourceInfoPromise) {
+      this.resourceInfoPromise = (async () => {
+        const serviceUrl = normalizeFeatureServiceUrl(getConfiguredFeatureServiceUrl());
+        const response = await esriRequest(serviceUrl, {
+          query: { f: "json" },
+          responseType: "json",
+        });
+        const data = response.data as FeatureServiceMetadata;
+        const trajectLayer = findNamedResource(data.layers, [
+          "gc_werk_trajecten",
+          "werk_trajecten",
+          "trajecten",
+          "traject",
+        ]);
+
+        if (!trajectLayer) {
+          throw new Error(
+            `Kon in de FeatureServer geen trajectlaag vinden. Beschikbare lagen: ${
+              data.layers?.map((layer) => `${layer.name} (${layer.id})`).join(", ") || "geen"
+            }.`
+          );
+        }
+
+        return {
+          serviceUrl,
+          trajectLayerUrl: toResourceUrl(serviceUrl, trajectLayer.id),
+        };
+      })().catch((error) => {
+        this.resourceInfoPromise = null;
+        throw error;
+      });
+    }
+
+    return this.resourceInfoPromise;
+  }
+
   isTrajectLayerEditable(layer: FeatureLayer): boolean {
     return isLayerEditingEnabled(layer);
   }
 
   async createTrajectLayer(): Promise<FeatureLayer> {
+    const { trajectLayerUrl: url } = await this.resolveResourceInfo();
     const layer = new FeatureLayer({
-      url: FEATURE_LAYER_URL,
+      url,
       outFields: ["*"],
-      title: "Jaarplan Trajecten",
+      title: "Kaart Traject Controle",
       renderer: createStatusRenderer(),
     });
 
-    await layer.load();
+    try {
+      await layer.load();
+    } catch (error) {
+      throw new Error(`Trajectlaag kon niet laden: ${url}. ${formatArcgisError(error)}`);
+    }
+
     return layer;
   }
 
@@ -482,6 +628,12 @@ export class ArcgisTrajectService {
       basemapOptions,
       statusOptions: await this.getStatusOptions(trajectLayer),
       modelTypeOptions: await this.getModelTypeOptions(trajectLayer),
+      trajectFieldOptions: {
+        aanpassenDoor: getFieldOptions(trajectLayer, "aanpassen_door"),
+        functie: getFieldOptions(trajectLayer, "functie"),
+        uitvoerderOnderhoud: getFieldOptions(trajectLayer, "uitvoerder_onderhoud"),
+        bodemklasse: getFieldOptions(trajectLayer, "bodemklasse"),
+      },
     };
   }
 
@@ -507,7 +659,7 @@ export class ArcgisTrajectService {
       return featureSet.features[0] ?? null;
     }
 
-    query.where = `guid='${globalId.replace(/'/g, "''")}'`;
+    query.where = `GlobalID='${globalId.replace(/'/g, "''")}'`;
     const featureSet = await layer.queryFeatures(query);
 
     return featureSet.features[0] ?? null;
@@ -527,6 +679,11 @@ export class ArcgisTrajectService {
       geometry,
       attributes: {
         traject_code: values.trajectCode,
+        naam: values.naam,
+        aanpassen_door: values.aanpassenDoor || null,
+        functie: values.functie || null,
+        uitvoerder_onderhoud: values.uitvoerderOnderhoud || null,
+        bodemklasse: values.bodemklasse || null,
         type_codering: layer.types?.[0]?.id ?? FALLBACK_MODEL_TYPES[0].value,
         status: normalizedStatus,
         opmerking: values.opmerking,
@@ -578,6 +735,11 @@ export class ArcgisTrajectService {
       attributes: {
         OBJECTID: feature.objectId,
         traject_code: values.trajectCode,
+        naam: values.naam,
+        aanpassen_door: values.aanpassenDoor || null,
+        functie: values.functie || null,
+        uitvoerder_onderhoud: values.uitvoerderOnderhoud || null,
+        bodemklasse: values.bodemklasse || null,
         status: normalizedStatus,
         opmerking: values.opmerking,
       },
