@@ -10,7 +10,9 @@ import {
   RegimeBadge,
 } from "../components/jaarplan/maatregel-badges";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { NativeSelect } from "../components/ui/native-select";
+import { Switch } from "../components/ui/switch";
 import { arcgisJaarplanService } from "../services/arcgis-jaarplan-service";
 import {
   getFilteredJaarplanGroups,
@@ -22,11 +24,15 @@ import type {
   JaarplanMeasureFormValues,
   JaarplanMeasureRecord,
   JaarplanTrajectRecord,
-  MaatregelStatus,
-  SteekproefStatus,
 } from "../types/app";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+type TrajectDetailsDraft = Pick<
+  JaarplanTrajectRecord,
+  "naam" | "functie" | "bodemklasse" | "uitvoerderOnderhoud"
+  | "conceptGereedValue"
+>;
 
 function toMeasureDraft(measure: JaarplanMeasureRecord): JaarplanMeasureFormValues {
   return {
@@ -41,9 +47,14 @@ function toMeasureDraft(measure: JaarplanMeasureRecord): JaarplanMeasureFormValu
     afvoerenValue: measure.afvoerenValue,
     soortspecifiekeMaatValue: measure.soortspecifiekeMaatValue,
     locatiebezoekValue: measure.locatiebezoekValue,
+    wlToelichting: measure.wlToelichting,
+    werkinstructieUrl: measure.werkinstructieUrl,
+    uitvoeringswijzeMaaienValue: measure.uitvoeringswijzeMaaienValue,
+    steekproefOpmerking: measure.steekproefOpmerking,
     statusMaatregel: measure.statusMaatregel,
     datumGepland: measure.datumGepland,
     datumUitgevoerd: measure.datumUitgevoerd,
+    datumMaaiselGeruimd: measure.datumMaaiselGeruimd,
     steekproefStatus: measure.steekproefStatus,
     redenNietUitgevoerd: measure.redenNietUitgevoerd,
     foto: measure.foto,
@@ -58,6 +69,16 @@ function toSelectOptions(values: string[]) {
     .map((value) => ({ value, label: value }));
 }
 
+function toTrajectDetailsDraft(traject: JaarplanTrajectRecord): TrajectDetailsDraft {
+  return {
+    naam: traject.naam,
+    functie: traject.functie,
+    bodemklasse: traject.bodemklasse,
+    uitvoerderOnderhoud: traject.uitvoerderOnderhoud,
+    conceptGereedValue: traject.conceptGereed ? "1" : "0",
+  };
+}
+
 export function JaarplanPage() {
   const navigate = useNavigate();
   const trajecten = useAppStore((state) => state.jaarplanTrajecten);
@@ -70,16 +91,20 @@ export function JaarplanPage() {
   const resetJaarplanFilters = useAppStore((state) => state.resetJaarplanFilters);
   const selectedTrajectId = useAppStore((state) => state.selectedJaarplanTrajectId);
   const selectJaarplanTraject = useAppStore((state) => state.selectJaarplanTraject);
+  const selectTraject = useAppStore((state) => state.selectTraject);
+  const setZoomTargetGlobalId = useAppStore((state) => state.setZoomTargetGlobalId);
   const setJaarplanZoomTargetGlobalId = useAppStore(
     (state) => state.setJaarplanZoomTargetGlobalId
   );
   const upsertJaarplanMeasure = useAppStore((state) => state.upsertJaarplanMeasure);
+  const upsertJaarplanTraject = useAppStore((state) => state.upsertJaarplanTraject);
   const removeJaarplanMeasure = useAppStore((state) => state.removeJaarplanMeasure);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expandedMeasureIds, setExpandedMeasureIds] = useState<Record<string, boolean>>({});
   const [addingByTrajectId, setAddingByTrajectId] = useState<Record<string, boolean>>({});
   const [editingMeasureId, setEditingMeasureId] = useState<string | null>(null);
   const [savingTrajectId, setSavingTrajectId] = useState<string | null>(null);
+  const [savingTrajectDetailsId, setSavingTrajectDetailsId] = useState<string | null>(null);
   const [savingMeasureId, setSavingMeasureId] = useState<string | null>(null);
   const [deletingMeasureId, setDeletingMeasureId] = useState<string | null>(null);
   const [newMeasureByTrajectId, setNewMeasureByTrajectId] = useState<
@@ -88,6 +113,7 @@ export function JaarplanPage() {
   const [measureDrafts, setMeasureDrafts] = useState<Record<string, JaarplanMeasureFormValues>>(
     {}
   );
+  const [trajectDrafts, setTrajectDrafts] = useState<Record<string, TrajectDetailsDraft>>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(20);
 
@@ -119,14 +145,16 @@ export function JaarplanPage() {
           value: option.label,
           label: option.label,
         })) ?? [],
-      statusMaatregel: arcgisJaarplanService.maatregelStatusOptions.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
-      steekproefStatus: arcgisJaarplanService.steekproefStatusOptions.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
+      statusMaatregel:
+        metadata?.statusMaatregelOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })) ?? [],
+      steekproefStatus:
+        metadata?.steekproefStatusOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })) ?? [],
     };
   }, [measures, metadata]);
 
@@ -143,6 +171,9 @@ export function JaarplanPage() {
     [sharedFilters]
   );
   const totalVisibleMeasures = groupedRows.reduce((sum, group) => sum + group.measures.length, 0);
+  const conceptGereedCount = trajecten.filter((traject) => traject.conceptGereed).length;
+  const conceptGereedProgress =
+    trajecten.length > 0 ? Math.round((conceptGereedCount / trajecten.length) * 100) : 0;
   const totalAlerts = groupedRows.reduce(
     (sum, group) =>
       sum +
@@ -271,6 +302,51 @@ export function JaarplanPage() {
     });
   }
 
+  function updateTrajectDraft(
+    traject: JaarplanTrajectRecord,
+    field: keyof TrajectDetailsDraft,
+    value: string
+  ) {
+    setTrajectDrafts((current) => ({
+      ...current,
+      [traject.globalId]: {
+        ...(current[traject.globalId] ?? toTrajectDetailsDraft(traject)),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function handleSaveTrajectDetails(traject: JaarplanTrajectRecord) {
+    if (!metadata) {
+      return;
+    }
+
+    const draft = trajectDrafts[traject.globalId] ?? toTrajectDetailsDraft(traject);
+    setSavingTrajectDetailsId(traject.globalId);
+
+    try {
+      const updated = await arcgisJaarplanService.updateTrajectDetails(
+        traject.globalId,
+        draft
+      );
+      upsertJaarplanTraject(updated);
+      setTrajectDrafts((current) => ({
+        ...current,
+        [traject.globalId]: toTrajectDetailsDraft(updated),
+      }));
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Trajectgegevens opslaan is mislukt."
+      );
+    } finally {
+      setSavingTrajectDetailsId((current) =>
+        current === traject.globalId ? null : current
+      );
+    }
+  }
+
   async function handleCreateMeasure(traject: JaarplanTrajectRecord) {
     if (!metadata) {
       return;
@@ -312,34 +388,12 @@ export function JaarplanPage() {
     try {
       const updatedServerMeasure = await arcgisJaarplanService.updateMeasureServerFields(
         measure.globalId,
-        {
-          trajectGuid: draft.trajectGuid,
-          trajectGlobalId: draft.trajectGlobalId,
-          regimeValue: draft.regimeValue,
-          werkzaamhedenValue: draft.werkzaamhedenValue,
-          toelichtingValue: draft.toelichtingValue,
-          werkperiodeVanValue: draft.werkperiodeVanValue,
-          werkperiodeTotValue: draft.werkperiodeTotValue,
-          zijdeValue: draft.zijdeValue,
-          afvoerenValue: draft.afvoerenValue,
-          soortspecifiekeMaatValue: draft.soortspecifiekeMaatValue,
-          locatiebezoekValue: draft.locatiebezoekValue,
-        },
+        draft,
         metadata,
         trajecten
       );
 
-      const mergedMeasure = arcgisJaarplanService.updateMeasureLocalFields(updatedServerMeasure, {
-        statusMaatregel: draft.statusMaatregel as MaatregelStatus,
-        datumGepland: draft.datumGepland,
-        datumUitgevoerd: draft.datumUitgevoerd,
-        steekproefStatus: draft.steekproefStatus as SteekproefStatus,
-        redenNietUitgevoerd: draft.redenNietUitgevoerd,
-        foto: draft.foto,
-        opmerking: draft.opmerking,
-      });
-
-      upsertJaarplanMeasure(mergedMeasure);
+      upsertJaarplanMeasure(updatedServerMeasure);
       setEditingMeasureId((current) => (current === measure.globalId ? null : current));
     } finally {
       setSavingMeasureId((current) => (current === measure.globalId ? null : current));
@@ -416,13 +470,35 @@ export function JaarplanPage() {
   return (
     <div className="app-scrollbar h-full overflow-y-auto px-4 py-5 md:px-8">
       <div className="mx-auto max-w-[1700px] space-y-4">
-        <section className="glass-panel rounded-card border border-white/60 p-4 md:p-5">
-          <h1 className="text-xl font-bold text-text">Jaarplan</h1>
-          <p className="mt-1 max-w-3xl text-[12.5px] leading-6 text-textDim">
-            Modern overzicht van trajecten, maatregelen, planning en uitvoering. De kaart volgt
-            dezelfde filters en dezelfde statuslogica.
-          </p>
-        </section>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="glass-panel rounded-card border border-white/60 p-4 md:p-5">
+            <h1 className="text-xl font-bold text-text">Jaarplan</h1>
+            <p className="mt-1 max-w-3xl text-[12.5px] leading-6 text-textDim">
+              Modern overzicht van trajecten, maatregelen, planning en uitvoering. De kaart volgt
+              dezelfde filters en dezelfde statuslogica.
+            </p>
+          </section>
+
+          <section className="rounded-card border border-border bg-white p-4 shadow-panel">
+            <div className="flex h-full flex-col justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accentStrong">
+                  Concept gereed voortgang
+                </div>
+                <div className="mt-2 text-2xl font-bold text-text">{conceptGereedProgress}%</div>
+                <div className="text-[11px] text-textMuted">
+                  {conceptGereedCount} van {trajecten.length} trajecten gemarkeerd
+                </div>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-pill bg-surfaceAlt">
+                <div
+                  className="h-full rounded-pill bg-accent transition-all"
+                  style={{ width: `${conceptGereedProgress}%` }}
+                />
+              </div>
+            </div>
+          </section>
+        </div>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="glass-panel rounded-card p-4">
@@ -527,6 +603,17 @@ export function JaarplanPage() {
               <tbody>
                 {paginatedRows.map((group) => {
                   const isCollapsed = collapsed[group.traject.globalId] ?? true;
+                  const trajectDraft =
+                    trajectDrafts[group.traject.globalId] ??
+                    toTrajectDetailsDraft(group.traject);
+                  const hasTrajectDraftChanges =
+                    trajectDraft.naam !== group.traject.naam ||
+                    trajectDraft.functie !== group.traject.functie ||
+                    trajectDraft.bodemklasse !== group.traject.bodemklasse ||
+                    trajectDraft.uitvoerderOnderhoud !==
+                      group.traject.uitvoerderOnderhoud ||
+                    (trajectDraft.conceptGereedValue === "1") !==
+                      group.traject.conceptGereed;
 
                   return (
                     <Fragment key={group.traject.globalId}>
@@ -553,6 +640,11 @@ export function JaarplanPage() {
                             )}
                             <div>
                               <div className="font-medium text-text">{group.traject.trajectCode}</div>
+                              {group.traject.naam ? (
+                                <div className="mt-0.5 text-[11px] text-textDim">
+                                  {group.traject.naam}
+                                </div>
+                              ) : null}
                               <div className="mt-0.5 font-mono text-[10px] text-textMuted">
                                 {group.traject.globalId.slice(0, 8)}
                               </div>
@@ -606,7 +698,9 @@ export function JaarplanPage() {
                             onClick={() => {
                               selectJaarplanTraject(group.traject.globalId, "table");
                               setJaarplanZoomTargetGlobalId(group.traject.globalId);
-                              navigate("/map");
+                              selectTraject(group.traject.globalId, "table");
+                              setZoomTargetGlobalId(group.traject.globalId);
+                              navigate("/map-traject-controle");
                             }}
                           >
                             <MapPinned className="h-3.5 w-3.5" />
@@ -619,6 +713,183 @@ export function JaarplanPage() {
                         <tr className="border-b border-border/60 bg-surfaceAlt/40">
                           <td colSpan={6} className="px-3 py-4">
                             <div className="space-y-4">
+                              <section className="rounded-card border border-border bg-white p-4 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.45)]">
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                                      Trajectgegevens
+                                    </div>
+                                    <div className="mt-1 text-[12px] text-textDim">
+                                      Basisgegevens van het traject voor jaarplan en planning.
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant={hasTrajectDraftChanges ? "default" : "outline"}
+                                    onClick={() => {
+                                      void handleSaveTrajectDetails(group.traject);
+                                    }}
+                                    disabled={
+                                      !metadata.trajectEditable ||
+                                      !hasTrajectDraftChanges ||
+                                      savingTrajectDetailsId === group.traject.globalId
+                                    }
+                                  >
+                                    {savingTrajectDetailsId === group.traject.globalId
+                                      ? "Opslaan..."
+                                      : "Traject opslaan"}
+                                  </Button>
+                                </div>
+
+                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">Naam</span>
+                                    <Input
+                                      value={trajectDraft.naam}
+                                      onChange={(event) =>
+                                        updateTrajectDraft(
+                                          group.traject,
+                                          "naam",
+                                          event.target.value
+                                        )
+                                      }
+                                    />
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">Functie</span>
+                                    {metadata.trajectFieldOptions.functie.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.functie}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "functie",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.functie.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.functie}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "functie",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">Bodemklasse</span>
+                                    {metadata.trajectFieldOptions.bodemklasse.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.bodemklasse}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "bodemklasse",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.bodemklasse.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.bodemklasse}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "bodemklasse",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">
+                                      Uitvoerder onderhoud
+                                    </span>
+                                    {metadata.trajectFieldOptions.uitvoerderOnderhoud.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.uitvoerderOnderhoud}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "uitvoerderOnderhoud",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.uitvoerderOnderhoud.map(
+                                          (option) => (
+                                            <option key={option.value} value={option.value}>
+                                              {option.label}
+                                            </option>
+                                          )
+                                        )}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.uitvoerderOnderhoud}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "uitvoerderOnderhoud",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+                                </div>
+
+                                <label className="mt-3 flex items-start gap-3 rounded-card border border-border bg-surfaceAlt px-4 py-3">
+                                  <Switch
+                                    checked={trajectDraft.conceptGereedValue === "1"}
+                                    onCheckedChange={(checked) =>
+                                      updateTrajectDraft(
+                                        group.traject,
+                                        "conceptGereedValue",
+                                        checked ? "1" : "0"
+                                      )
+                                    }
+                                  />
+                                  <div>
+                                    <div className="text-[12px] font-medium text-text">
+                                      Concept gereed
+                                    </div>
+                                    <div className="text-[11px] text-textMuted">
+                                      Telt mee in de voortgang van het vullen van maatregelen.
+                                    </div>
+                                  </div>
+                                </label>
+
+                                {!metadata.trajectEditable ? (
+                                  <div className="mt-3 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                                    Bewerken is niet ingeschakeld voor de trajectlaag.
+                                  </div>
+                                ) : null}
+                              </section>
+
                               <div className="overflow-hidden rounded-card border border-border bg-white">
                                 <div className="app-scrollbar overflow-auto">
                                   <table className="min-w-[1380px] w-full border-collapse text-[12px]">
@@ -767,7 +1038,7 @@ export function JaarplanPage() {
                                                         values={draft}
                                                         metadata={metadata!}
                                                         steekproefStatusOptions={
-                                                          arcgisJaarplanService.steekproefStatusOptions
+                                                          metadata!.steekproefStatusOptions
                                                         }
                                                         toelichtingText={arcgisJaarplanService.getMeasureToelichtingLabel(
                                                           metadata!,
@@ -787,11 +1058,19 @@ export function JaarplanPage() {
                                                       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
                                                         <div className="rounded-card border border-border bg-surfaceAlt p-4">
                                                           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
-                                                            Toelichting
+                                                            Werkinstructie
                                                           </div>
                                                           <p className="mt-2 whitespace-pre-line text-[12px] leading-6 text-textDim">
                                                             {measure.toelichtingLabel}
                                                           </p>
+                                                          <div className="mt-4 border-t border-border pt-4">
+                                                            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                                                              Toelichting
+                                                            </div>
+                                                            <p className="mt-2 whitespace-pre-line text-[12px] leading-6 text-textDim">
+                                                              {measure.wlToelichting || "—"}
+                                                            </p>
+                                                          </div>
                                                         </div>
                                                         <div className="grid gap-3 rounded-card border border-border bg-surfaceAlt p-4 text-[12px] text-textDim">
                                                           <div>
@@ -906,7 +1185,7 @@ export function JaarplanPage() {
                                       }
                                       metadata={metadata}
                                       steekproefStatusOptions={
-                                        arcgisJaarplanService.steekproefStatusOptions
+                                        metadata.steekproefStatusOptions
                                       }
                                       toelichtingText={arcgisJaarplanService.getMeasureToelichtingLabel(
                                         metadata,

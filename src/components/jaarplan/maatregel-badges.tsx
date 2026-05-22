@@ -29,7 +29,7 @@ export function getJaarplanRegimePalette(regimeNumber: number | null) {
 }
 
 export function getMaatregelStatusPalette(status: MaatregelStatus) {
-  switch (status) {
+  switch (status.toLowerCase()) {
     case "uitgevoerd":
       return {
         label: "Uitgevoerd",

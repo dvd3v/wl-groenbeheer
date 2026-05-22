@@ -1,3 +1,5 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import type {
   JaarplanMeasureFormValues,
   JaarplanMetadata,
@@ -85,6 +87,46 @@ function isCheckedJaNeeValue(
   return value === getCheckboxValue(options, true);
 }
 
+function CollapsibleSection({
+  title,
+  subtitle,
+  open,
+  className,
+  titleClassName,
+  children,
+  onToggle,
+}: {
+  title: string;
+  subtitle: string;
+  open: boolean;
+  className: string;
+  titleClassName: string;
+  children: ReactNode;
+  onToggle: () => void;
+}) {
+  return (
+    <section className={className}>
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-4 text-left"
+        onClick={onToggle}
+      >
+        <div>
+          <div className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${titleClassName}`}>
+            {title}
+          </div>
+          <div className="mt-1 text-[12px] text-textDim">{subtitle}</div>
+        </div>
+        <span className="mt-0.5 rounded-md border border-border bg-white p-1 text-textMuted">
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </span>
+      </button>
+
+      {open ? <div className="mt-4">{children}</div> : null}
+    </section>
+  );
+}
+
 export function MaatregelForm({
   values,
   metadata,
@@ -109,24 +151,34 @@ export function MaatregelForm({
   const contractorTopGridClassName = compact
     ? "grid gap-3 sm:grid-cols-2"
     : "grid gap-3 xl:grid-cols-12";
-  const contractorBottomGridClassName = compact
+  const inspectionGridClassName = compact
     ? "grid gap-3 sm:grid-cols-2"
     : "grid gap-3 xl:grid-cols-12";
   const yesValue = getCheckboxValue(metadata.jaNeeOptions, true);
   const noValue = getCheckboxValue(metadata.jaNeeOptions, false);
+  const [openSections, setOpenSections] = useState({
+    wl: true,
+    aannemer: false,
+    inspectie: false,
+  });
+
+  function toggleSection(section: keyof typeof openSections) {
+    setOpenSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  }
 
   return (
     <div className="space-y-4">
-      <section className="rounded-card border border-accent/15 bg-accentSoft/20 p-4">
-        <div className="mb-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accentStrong">
-            WL planning
-          </div>
-          <div className="mt-1 text-[12px] text-textDim">
-            Velden voor voorbereiding en inhoud van de maatregel.
-          </div>
-        </div>
-
+      <CollapsibleSection
+        title="WL planning"
+        subtitle="Velden voor voorbereiding en inhoud van de maatregel."
+        open={openSections.wl}
+        className="rounded-card border border-accent/15 bg-accentSoft/20 p-4"
+        titleClassName="text-accentStrong"
+        onToggle={() => toggleSection("wl")}
+      >
         <div className="space-y-3">
           <div className={planningTopGridClassName}>
           <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-2"}`}>
@@ -285,9 +337,6 @@ export function MaatregelForm({
               />
               <div>
                 <div className="text-[12px] font-medium text-text">Soortspecifieke maatregel</div>
-                <div className="text-[11px] text-textMuted">
-                  Aanvinken wanneer extra soortspecifieke aandacht nodig is.
-                </div>
               </div>
             </label>
 
@@ -309,58 +358,88 @@ export function MaatregelForm({
               />
               <div>
                 <div className="text-[12px] font-medium text-text">Locatiebezoek</div>
-                <div className="text-[11px] text-textMuted">
-                  Aanvinken wanneer een locatiebezoek nodig is.
-                </div>
               </div>
             </label>
           </div>
 
-          <label className={`space-y-1.5 ${compact ? "sm:col-span-2" : "xl:col-span-12"}`}>
-            <span className="text-[11px] text-textDim">Toelichting</span>
-            <Textarea
-              rows={4}
-              value={toelichtingText}
-              readOnly
-              className="min-h-[110px] bg-white"
-            />
+          <div className={planningBottomGridClassName}>
+            <label className={`${compact ? "sm:col-span-2" : "xl:col-span-6"} space-y-1.5`}>
+              <span className="text-[11px] text-textDim">Werkinstructie</span>
+              <Textarea
+                rows={4}
+                value={toelichtingText}
+                readOnly
+                className="min-h-[110px] bg-white"
+              />
+            </label>
+
+            <label className={`${compact ? "sm:col-span-2" : "xl:col-span-6"} space-y-1.5`}>
+              <span className="text-[11px] text-textDim">Toelichting</span>
+              <Textarea
+                rows={4}
+                className="min-h-[110px] bg-white"
+                value={values.wlToelichting}
+                onChange={(event) => onFieldChange("wlToelichting", event.target.value)}
+              />
+            </label>
+          </div>
+
+          <label className={`space-y-1.5 ${compact ? "sm:col-span-2" : "xl:col-span-4"}`}>
+            <span className="text-[11px] text-textDim">Uitvoeringswijze maaien</span>
+            <NativeSelect
+              value={values.uitvoeringswijzeMaaienValue}
+              onChange={(event) =>
+                onFieldChange("uitvoeringswijzeMaaienValue", event.target.value)
+              }
+            >
+              {metadata.uitvoeringswijzeMaaienOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
           </label>
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="rounded-card border border-emerald-200 bg-emerald-50/70 p-4">
-        <div className="mb-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
-            Aannemer uitvoering
-          </div>
-          <div className="mt-1 text-[12px] text-textDim">
-            Velden die later tijdens planning en uitvoering worden ingevuld.
-          </div>
-        </div>
-
+      <CollapsibleSection
+        title="Aannemer uitvoering"
+        subtitle="Velden die later tijdens planning en uitvoering worden ingevuld."
+        open={openSections.aannemer}
+        className="rounded-card border border-emerald-200 bg-emerald-50/70 p-4"
+        titleClassName="text-emerald-700"
+        onToggle={() => toggleSection("aannemer")}
+      >
         <div className="space-y-3">
           <div className={contractorTopGridClassName}>
-          <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-3"}`}>
+          <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-2"}`}>
             <span className="text-[11px] text-textDim">Status maatregel</span>
             <NativeSelect
               value={values.statusMaatregel}
               onChange={(event) => onFieldChange("statusMaatregel", event.target.value)}
             >
-              <option value="geen_status">Geen status</option>
-              <option value="gepland">Gepland</option>
-              <option value="uitgevoerd">Uitgevoerd</option>
-              <option value="deels_uitgevoerd">Deels uitgevoerd</option>
-              <option value="niet_uitgevoerd">Niet uitgevoerd</option>
+              <option value="">Geen status</option>
+              {metadata.statusMaatregelOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </NativeSelect>
           </label>
 
           <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-2"}`}>
-            <span className="text-[11px] text-textDim">Datum gepland</span>
-            <Input
-              type="date"
+            <span className="text-[11px] text-textDim">Periode gepland</span>
+            <NativeSelect
               value={values.datumGepland}
               onChange={(event) => onFieldChange("datumGepland", event.target.value)}
-            />
+            >
+              <option value="">—</option>
+              {metadata.werkperiodeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
           </label>
 
           <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-2"}`}>
@@ -373,7 +452,62 @@ export function MaatregelForm({
           </label>
 
           <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-2"}`}>
-            <span className="text-[11px] text-textDim">Steekproef status</span>
+            <span className="text-[11px] text-textDim">Maaisel geruimd</span>
+            <Input
+              type="date"
+              value={values.datumMaaiselGeruimd}
+              onChange={(event) => onFieldChange("datumMaaiselGeruimd", event.target.value)}
+            />
+          </label>
+
+          <label className={`space-y-1.5 ${compact ? "sm:col-span-2" : "xl:col-span-4"}`}>
+            <span className="text-[11px] text-textDim">Foto uitvoeringsbewijs URL</span>
+            <Input
+              value={values.foto}
+              onChange={(event) => onFieldChange("foto", event.target.value)}
+            />
+          </label>
+
+          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-4"} space-y-1.5`}>
+            <span className="text-[11px] text-textDim">Reden niet uitgevoerd</span>
+            <NativeSelect
+              value={values.redenNietUitgevoerd}
+              onChange={(event) => onFieldChange("redenNietUitgevoerd", event.target.value)}
+            >
+              <option value="">—</option>
+              {metadata.redenNietUitgevoerdOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+
+          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-8"} space-y-1.5`}>
+            <span className="text-[11px] text-textDim">Opmerking</span>
+            <Textarea
+              rows={4}
+              className="min-h-[110px] bg-white"
+              value={values.opmerking}
+              onChange={(event) => onFieldChange("opmerking", event.target.value)}
+              placeholder="Vrije opmerking voor aannemer of controle"
+            />
+          </label>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Inspectie"
+        subtitle="Velden voor steekproefcontrole en inspectiebevindingen."
+        open={openSections.inspectie}
+        className="rounded-card border border-amber-200 bg-amber-50/80 p-4"
+        titleClassName="text-amber-800"
+        onToggle={() => toggleSection("inspectie")}
+      >
+        <div className={inspectionGridClassName}>
+          <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-4"}`}>
+            <span className="text-[11px] text-textDim">Status steekproef</span>
             <NativeSelect
               value={values.steekproefStatus}
               onChange={(event) =>
@@ -388,41 +522,17 @@ export function MaatregelForm({
             </NativeSelect>
           </label>
 
-          <label className={`space-y-1.5 ${compact ? "sm:col-span-2" : "xl:col-span-5"}`}>
-            <span className="text-[11px] text-textDim">Foto</span>
-            <Input
-              value={values.foto}
-              onChange={(event) => onFieldChange("foto", event.target.value)}
-              placeholder="Dummy veld voor fotolink of bestandsnaam"
-            />
-          </label>
-          </div>
-
-          <div className={contractorBottomGridClassName}>
-          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-6"} space-y-1.5`}>
-            <span className="text-[11px] text-textDim">Reden niet uitgevoerd</span>
+          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-8"} space-y-1.5`}>
+            <span className="text-[11px] text-textDim">Steekproef opmerkingen</span>
             <Textarea
               rows={3}
               className="min-h-[92px] bg-white"
-              value={values.redenNietUitgevoerd}
-              onChange={(event) => onFieldChange("redenNietUitgevoerd", event.target.value)}
-              placeholder="Toelichting wanneer de maatregel niet is uitgevoerd"
+              value={values.steekproefOpmerking}
+              onChange={(event) => onFieldChange("steekproefOpmerking", event.target.value)}
             />
           </label>
-
-          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-6"} space-y-1.5`}>
-            <span className="text-[11px] text-textDim">Opmerking</span>
-            <Textarea
-              rows={3}
-              className="min-h-[92px] bg-white"
-              value={values.opmerking}
-              onChange={(event) => onFieldChange("opmerking", event.target.value)}
-              placeholder="Vrije opmerking voor aannemer of controle"
-            />
-          </label>
-          </div>
         </div>
-      </section>
+      </CollapsibleSection>
 
       <div className="flex justify-end">
         <Button type="button" onClick={onSubmit} disabled={saving} className="px-4 py-2">

@@ -16,7 +16,6 @@ import type ListItem from "@arcgis/core/widgets/LayerList/ListItem.js";
 import type Field from "@arcgis/core/layers/support/Field.js";
 import type {
   JaarplanDomainOption,
-  JaarplanLocalFields,
   JaarplanMeasureFormValues,
   JaarplanMeasureRecord,
   JaarplanMeasureServerInput,
@@ -28,16 +27,9 @@ import type {
   MaatregelStatus,
   SteekproefStatus,
 } from "../types/app";
+import { getConfiguredFeatureServiceUrl } from "./layer-config-service";
 
-const DEFAULT_JAARPLAN_FEATURE_SERVICE_URL =
-  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/JaarplanTrajecten_pilot/FeatureServer";
-
-const JAARPLAN_FEATURE_SERVICE_URL = normalizeFeatureServiceUrl(
-  import.meta.env.VITE_JAARPLAN_FEATURE_SERVICE_URL?.trim() ||
-    import.meta.env.VITE_JAARPLAN_TRAJECT_LAYER_URL?.trim() ||
-    import.meta.env.VITE_JAARPLAN_MAATREGEL_TABLE_URL?.trim() ||
-    DEFAULT_JAARPLAN_FEATURE_SERVICE_URL
-);
+const JAARPLAN_FEATURE_SERVICE_URL = normalizeFeatureServiceUrl(getConfiguredFeatureServiceUrl());
 
 const GISIB_BOR_MAPSERVER_URL =
   "https://utility.arcgis.com/usrsvcs/servers/73fc6147aa1d457fa19f50598a9e1001/rest/services/Groenbeheer/GISIB_BOR/MapServer";
@@ -59,13 +51,12 @@ const GISIB_BOR_LAYER_DEFINITIONS = [
   { id: 3, title: "Faunaverblijfplaats" },
 ] as const;
 
-const LOCAL_STORAGE_KEY = "wl-groenbeheer.jaarplan-local-fields.v1";
-
-const DEFAULT_LOCAL_FIELDS: JaarplanLocalFields = {
-  statusMaatregel: "geen_status",
+const DEFAULT_MEASURE_FORM_FIELDS = {
+  statusMaatregel: "",
   datumGepland: "",
   datumUitgevoerd: "",
-  steekproefStatus: "niet_beoordeeld",
+  datumMaaiselGeruimd: "",
+  steekproefStatus: "Niet_beoordeeld",
   redenNietUitgevoerd: "",
   foto: "",
   opmerking: "",
@@ -75,35 +66,52 @@ const STEEKPROEF_STATUS_OPTIONS: Array<{
   value: SteekproefStatus;
   label: string;
 }> = [
-  { value: "niet_beoordeeld", label: "Niet beoordeeld" },
-  { value: "ingepland", label: "Ingepland" },
-  { value: "goedgekeurd", label: "Goedgekeurd" },
-  { value: "afgekeurd", label: "Afgekeurd" },
+  { value: "Niet_beoordeeld", label: "Niet beoordeeld" },
+  { value: "Ingepland", label: "Ingepland" },
+  { value: "Goedgekeurd", label: "Goedgekeurd" },
+  { value: "Afgekeurd", label: "Afgekeurd" },
 ];
 
 const MAATREGEL_STATUS_OPTIONS: Array<{
   value: MaatregelStatus;
   label: string;
 }> = [
-  { value: "geen_status", label: "Geen status" },
-  { value: "gepland", label: "Gepland" },
-  { value: "uitgevoerd", label: "Uitgevoerd" },
-  { value: "deels_uitgevoerd", label: "Deels uitgevoerd" },
-  { value: "niet_uitgevoerd", label: "Niet uitgevoerd" },
+  { value: "", label: "Geen status" },
+  { value: "Gepland", label: "Gepland" },
+  { value: "Uitgevoerd", label: "Uitgevoerd" },
+  { value: "Deels_uitgevoerd", label: "Deels uitgevoerd" },
+  { value: "Niet_uitgevoerd", label: "Niet uitgevoerd" },
 ];
 
 const FIELD_NAMES = {
   trajectCode: "traject_code",
   trajectGuid: "traject_guid",
-  regime: "Regime",
-  werkzaamheden: "Werkzaamheden",
-  toelichting: "Toelichting",
-  werkperiodeVan: "Werkperiode_van",
-  werkperiodeTot: "Werkperiode_tot",
-  zijde: "Zijde",
-  afvoeren: "Afvoeren",
-  soortspecifiekeMaat: "Soortspecifieke_maat",
-  locatiebezoek: "Locatiebezoek",
+  naam: "naam",
+  functie: "functie",
+  bodemklasse: "bodemklasse",
+  status: "status",
+  conceptGereed: "concept_gereed",
+  regime: "wl_regime",
+  werkzaamheden: "wl_werkzaamheden",
+  toelichting: "wl_werkinstructie",
+  wlToelichting: "wl_toelichting",
+  werkinstructieUrl: "wl_werkinstructie_url",
+  werkperiodeVan: "wl_werkperiode_van",
+  werkperiodeTot: "wl_werkperiode_tot",
+  zijde: "wl_zijde",
+  afvoeren: "wl_afvoeren",
+  soortspecifiekeMaat: "wl_soortspecifieke_maatregel",
+  locatiebezoek: "wl_locatiebezoek",
+  uitvoeringswijzeMaaien: "wl_uitvoeringswijze_maaien",
+  steekproefStatus: "wl_steekproef_status",
+  steekproefOpmerking: "wl_steekproef_opmerking",
+  statusMaatregel: "anm_status_maatregel",
+  periodeGepland: "anm_periode_gepland",
+  datumUitgevoerd: "anm_datum_uitgevoerd",
+  datumMaaiselGeruimd: "anm_datum_maaisel_geruimd",
+  fotoUrl: "anm_foto_url",
+  redenNietUitgevoerd: "anm_reden_niet_uitgevoerd",
+  aannemerOpmerking: "anm_opmerking",
   uitvoerderOnderhoud: "uitvoerder_onderhoud",
   guid: "guid",
   globalId: "GlobalID",
@@ -125,7 +133,12 @@ const TRAJECT_OUT_FIELDS = [
   FIELD_NAMES.globalId,
   FIELD_NAMES.guid,
   FIELD_NAMES.trajectCode,
+  FIELD_NAMES.naam,
+  FIELD_NAMES.functie,
+  FIELD_NAMES.bodemklasse,
   FIELD_NAMES.uitvoerderOnderhoud,
+  FIELD_NAMES.status,
+  FIELD_NAMES.conceptGereed,
 ] as const;
 const MAATREGEL_OUT_FIELDS = [
   "OBJECTID",
@@ -140,6 +153,18 @@ const MAATREGEL_OUT_FIELDS = [
   FIELD_NAMES.afvoeren,
   FIELD_NAMES.soortspecifiekeMaat,
   FIELD_NAMES.locatiebezoek,
+  FIELD_NAMES.wlToelichting,
+  FIELD_NAMES.werkinstructieUrl,
+  FIELD_NAMES.uitvoeringswijzeMaaien,
+  FIELD_NAMES.steekproefStatus,
+  FIELD_NAMES.steekproefOpmerking,
+  FIELD_NAMES.statusMaatregel,
+  FIELD_NAMES.periodeGepland,
+  FIELD_NAMES.datumUitgevoerd,
+  FIELD_NAMES.datumMaaiselGeruimd,
+  FIELD_NAMES.fotoUrl,
+  FIELD_NAMES.redenNietUitgevoerd,
+  FIELD_NAMES.aannemerOpmerking,
 ] as const;
 
 interface BasemapOption {
@@ -260,91 +285,6 @@ function createBasemapOptions(): BasemapOption[] {
   ];
 }
 
-function readLocalFields(): Record<string, Partial<JaarplanLocalFields>> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    return JSON.parse(raw) as Record<string, Partial<JaarplanLocalFields>>;
-  } catch {
-    return {};
-  }
-}
-
-function writeLocalFields(values: Record<string, Partial<JaarplanLocalFields>>): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(values));
-  } catch (error) {
-    console.warn("Lokale jaarplanvelden konden niet worden bewaard.", error);
-  }
-}
-
-function measureStorageKey(globalId: string, objectId: number): string {
-  return globalId || `oid:${objectId}`;
-}
-
-function mergeLocalFields(
-  globalId: string,
-  objectId: number
-): JaarplanLocalFields {
-  const stored = readLocalFields()[measureStorageKey(globalId, objectId)];
-
-  return {
-    ...DEFAULT_LOCAL_FIELDS,
-    ...stored,
-  };
-}
-
-function persistLocalFields(
-  globalId: string,
-  objectId: number,
-  values: Partial<JaarplanLocalFields>
-): JaarplanLocalFields {
-  const storage = readLocalFields();
-  const key = measureStorageKey(globalId, objectId);
-  const next = {
-    ...DEFAULT_LOCAL_FIELDS,
-    ...storage[key],
-    ...values,
-  };
-
-  storage[key] = next;
-  writeLocalFields(storage);
-
-  return next;
-}
-
-function removePersistedLocalFields(globalId: string, objectId: number): void {
-  const storage = readLocalFields();
-  const globalKey = globalId ? measureStorageKey(globalId, objectId) : "";
-  const objectKey = measureStorageKey("", objectId);
-  let changed = false;
-
-  if (globalKey && globalKey in storage) {
-    delete storage[globalKey];
-    changed = true;
-  }
-
-  if (objectKey in storage) {
-    delete storage[objectKey];
-    changed = true;
-  }
-
-  if (changed) {
-    writeLocalFields(storage);
-  }
-}
-
 function normalizeDomainOptions(
   domain: { codedValues?: Array<{ code: string | number; name: string }> } | null | undefined
 ): JaarplanDomainOption[] {
@@ -372,6 +312,10 @@ function getFieldDomainOptions(
   return normalizeDomainOptions(domain);
 }
 
+function isEditingEnabled(layer: FeatureLayer): boolean {
+  return layer.editingEnabled && layer.capabilities?.operations?.supportsEditing !== false;
+}
+
 function getSubtypeConfigs(table: FeatureLayer): Record<string, JaarplanSubtypeConfig> {
   return (table.types ?? []).reduce<Record<string, JaarplanSubtypeConfig>>((acc, subtype) => {
     const subtypeDomains = subtype.domains ?? {};
@@ -383,7 +327,7 @@ function getSubtypeConfigs(table: FeatureLayer): Record<string, JaarplanSubtypeC
     const toelichtingOptions = normalizeDomainOptions(toelichtingDomain);
     const defaultWerkzaamheidValue = werkzaamhedenOptions[0]?.value ?? null;
     const expectedToelichtingCode = defaultWerkzaamheidValue
-      ? `T${defaultWerkzaamheidValue}`
+      ? `W${defaultWerkzaamheidValue}`
       : null;
     const defaultToelichtingValue =
       toelichtingOptions.find((option) => option.value === expectedToelichtingCode)?.value ??
@@ -414,6 +358,11 @@ function toBooleanJaNee(value: string | number | null | undefined): boolean {
   return String(value ?? "").toLowerCase() === "1" || String(value ?? "").toLowerCase() === "ja";
 }
 
+function toConceptGereedBoolean(value: unknown): boolean {
+  const token = String(value ?? "").trim().toLowerCase();
+  return token === "1" || token === "true" || token === "ja" || token === "yes";
+}
+
 function normalizeJaNeeToken(value: string | number | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -439,6 +388,29 @@ function getJaNeeOptionValue(
   }
 
   return options.find(isNeeOption)?.value ?? "0";
+}
+
+function findOptionValue(
+  options: JaarplanDomainOption[],
+  candidates: string[]
+): string {
+  const normalizedCandidates = candidates.map((candidate) =>
+    candidate.trim().toLowerCase()
+  );
+
+  return (
+    options.find((option) => {
+      const tokens = [
+        option.value,
+        option.label,
+        String(option.rawValue),
+      ].map((token) => token.trim().toLowerCase());
+
+      return tokens.some((token) => normalizedCandidates.includes(token));
+    })?.value ??
+    options[0]?.value ??
+    ""
+  );
 }
 
 function toTrajectGlobalId(attributes: Record<string, unknown>): string {
@@ -517,7 +489,7 @@ function createUitvoerderRenderer(
 }
 
 function getStatusColor(status: MaatregelStatus): [number, number, number] {
-  switch (status) {
+  switch (status.toLowerCase()) {
     case "uitgevoerd":
       return [22, 163, 74];
     case "niet_uitgevoerd":
@@ -606,7 +578,15 @@ function toJaarplanTraject(graphic: Graphic): JaarplanTrajectRecord {
     globalId: toTrajectGlobalId(graphic.attributes as Record<string, unknown>),
     guid: String(graphic.attributes[FIELD_NAMES.guid] ?? ""),
     trajectCode: String(graphic.attributes[FIELD_NAMES.trajectCode] ?? ""),
+    naam: String(graphic.attributes[FIELD_NAMES.naam] ?? ""),
+    functie: String(graphic.attributes[FIELD_NAMES.functie] ?? ""),
+    bodemklasse: String(graphic.attributes[FIELD_NAMES.bodemklasse] ?? ""),
     uitvoerderOnderhoud: String(graphic.attributes[FIELD_NAMES.uitvoerderOnderhoud] ?? ""),
+    status: Number.isFinite(Number(graphic.attributes[FIELD_NAMES.status]))
+      ? Number(graphic.attributes[FIELD_NAMES.status])
+      : null,
+    conceptGereed: toConceptGereedBoolean(graphic.attributes[FIELD_NAMES.conceptGereed]),
+    conceptGereedValue: String(graphic.attributes[FIELD_NAMES.conceptGereed] ?? ""),
     geometry: graphic.geometry ?? null,
   };
 }
@@ -634,6 +614,34 @@ function toFieldValue(
   }
 
   return value;
+}
+
+function toDateInputValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const date =
+    typeof value === "number"
+      ? new Date(value)
+      : value instanceof Date
+        ? value
+        : new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function toArcgisDateValue(value: string): number | null {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
 }
 
 async function queryAllLayerFeatures(
@@ -687,7 +695,12 @@ function toJaarplanMeasure(
   const traject = trajectByGlobalId.get(trajectGuid);
   const globalId = toMeasureGlobalId(attributes);
   const objectId = Number(attributes.OBJECTID);
-  const localFields = mergeLocalFields(globalId, objectId);
+  const statusMaatregel = String(attributes[FIELD_NAMES.statusMaatregel] ?? "");
+  const steekproefStatus = String(
+    attributes[FIELD_NAMES.steekproefStatus] ??
+      metadata.steekproefStatusOptions[0]?.value ??
+      DEFAULT_MEASURE_FORM_FIELDS.steekproefStatus
+  );
 
   return {
     objectId,
@@ -746,7 +759,24 @@ function toJaarplanMeasure(
     locatiebezoek: toBooleanJaNee(
       attributes[FIELD_NAMES.locatiebezoek] as string | number | null | undefined
     ),
-    ...localFields,
+    wlToelichting: String(attributes[FIELD_NAMES.wlToelichting] ?? ""),
+    werkinstructieUrl: String(attributes[FIELD_NAMES.werkinstructieUrl] ?? ""),
+    uitvoeringswijzeMaaienValue: String(
+      attributes[FIELD_NAMES.uitvoeringswijzeMaaien] ?? ""
+    ),
+    uitvoeringswijzeMaaienLabel: getDomainLabel(
+      metadata.uitvoeringswijzeMaaienOptions,
+      String(attributes[FIELD_NAMES.uitvoeringswijzeMaaien] ?? "")
+    ),
+    steekproefOpmerking: String(attributes[FIELD_NAMES.steekproefOpmerking] ?? ""),
+    statusMaatregel,
+    datumGepland: String(attributes[FIELD_NAMES.periodeGepland] ?? ""),
+    datumUitgevoerd: toDateInputValue(attributes[FIELD_NAMES.datumUitgevoerd]),
+    datumMaaiselGeruimd: toDateInputValue(attributes[FIELD_NAMES.datumMaaiselGeruimd]),
+    steekproefStatus,
+    redenNietUitgevoerd: String(attributes[FIELD_NAMES.redenNietUitgevoerd] ?? ""),
+    foto: String(attributes[FIELD_NAMES.fotoUrl] ?? ""),
+    opmerking: String(attributes[FIELD_NAMES.aannemerOpmerking] ?? ""),
   };
 }
 
@@ -880,11 +910,17 @@ export class ArcgisJaarplanService {
         label: value,
         rawValue: value,
       }));
+    const uitvoerderDomainOptions = getFieldDomainOptions(
+      resolvedLayer,
+      FIELD_NAMES.uitvoerderOnderhoud
+    );
+    const functieOptions = getFieldDomainOptions(resolvedLayer, FIELD_NAMES.functie);
+    const bodemklasseOptions = getFieldDomainOptions(resolvedLayer, FIELD_NAMES.bodemklasse);
 
     return {
       editable:
-        resolvedTable.editingEnabled &&
-        resolvedTable.capabilities?.operations?.supportsEditing !== false,
+        isEditingEnabled(resolvedTable),
+      trajectEditable: isEditingEnabled(resolvedLayer),
       relationshipId: resolvedLayer.relationships?.[0]?.id ?? null,
       regimeOptions: getFieldDomainOptions(resolvedTable, FIELD_NAMES.regime),
       subtypeField: resolvedTable.subtypeField || null,
@@ -902,7 +938,38 @@ export class ArcgisJaarplanService {
       zijdeOptions: getFieldDomainOptions(resolvedTable, FIELD_NAMES.zijde),
       afvoerenOptions: getFieldDomainOptions(resolvedTable, FIELD_NAMES.afvoeren),
       jaNeeOptions: getFieldDomainOptions(resolvedTable, FIELD_NAMES.soortspecifiekeMaat),
-      uitvoerderOptions,
+      uitvoeringswijzeMaaienOptions: getFieldDomainOptions(
+        resolvedTable,
+        FIELD_NAMES.uitvoeringswijzeMaaien
+      ),
+      steekproefStatusOptions:
+        getFieldDomainOptions(resolvedTable, FIELD_NAMES.steekproefStatus).length > 0
+          ? getFieldDomainOptions(resolvedTable, FIELD_NAMES.steekproefStatus)
+          : STEEKPROEF_STATUS_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+              rawValue: option.value,
+            })),
+      statusMaatregelOptions:
+        getFieldDomainOptions(resolvedTable, FIELD_NAMES.statusMaatregel).length > 0
+          ? getFieldDomainOptions(resolvedTable, FIELD_NAMES.statusMaatregel)
+          : MAATREGEL_STATUS_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+              rawValue: option.value,
+            })),
+      redenNietUitgevoerdOptions: getFieldDomainOptions(
+        resolvedTable,
+        FIELD_NAMES.redenNietUitgevoerd
+      ),
+      uitvoerderOptions: uitvoerderDomainOptions.length ? uitvoerderDomainOptions : uitvoerderOptions,
+      trajectFieldOptions: {
+        functie: functieOptions,
+        bodemklasse: bodemklasseOptions,
+        uitvoerderOnderhoud: uitvoerderDomainOptions.length
+          ? uitvoerderDomainOptions
+          : uitvoerderOptions,
+      },
     };
   }
 
@@ -953,7 +1020,7 @@ export class ArcgisJaarplanService {
       "";
     const defaultToelichtingValue =
       subtypeConfig?.toelichtingOptions.find(
-        (option) => option.value === `T${defaultWerkzaamheidValue}`
+        (option) => option.value === `W${defaultWerkzaamheidValue}`
       )?.value ??
       subtypeConfig?.defaultToelichtingValue ??
       "";
@@ -966,11 +1033,22 @@ export class ArcgisJaarplanService {
       toelichtingValue: defaultToelichtingValue,
       werkperiodeVanValue: metadata.werkperiodeOptions[0]?.value ?? "",
       werkperiodeTotValue: metadata.werkperiodeOptions[0]?.value ?? "",
-      zijdeValue: metadata.zijdeOptions[0]?.value ?? "",
-      afvoerenValue: metadata.afvoerenOptions[0]?.value ?? "",
+      zijdeValue: findOptionValue(metadata.zijdeOptions, ["NVT", "N.v.t."]),
+      afvoerenValue: findOptionValue(metadata.afvoerenOptions, [
+        "Na24uur",
+        "Na 24 uur ruimen",
+      ]),
       soortspecifiekeMaatValue: getJaNeeOptionValue(metadata.jaNeeOptions, false),
       locatiebezoekValue: getJaNeeOptionValue(metadata.jaNeeOptions, false),
-      ...DEFAULT_LOCAL_FIELDS,
+      wlToelichting: "",
+      werkinstructieUrl: "",
+      uitvoeringswijzeMaaienValue: metadata.uitvoeringswijzeMaaienOptions[0]?.value ?? "",
+      steekproefOpmerking: "",
+      ...DEFAULT_MEASURE_FORM_FIELDS,
+      statusMaatregel: "",
+      steekproefStatus:
+        metadata.steekproefStatusOptions[0]?.value ??
+        DEFAULT_MEASURE_FORM_FIELDS.steekproefStatus,
     };
   }
 
@@ -991,7 +1069,7 @@ export class ArcgisJaarplanService {
         "";
       const toelichtingValue =
         subtypeConfig.toelichtingOptions.find(
-          (option) => option.value === `T${werkzaamhedenValue}`
+          (option) => option.value === `W${werkzaamhedenValue}`
         )?.value ??
         subtypeConfig.defaultToelichtingValue ??
         "";
@@ -1027,7 +1105,7 @@ export class ArcgisJaarplanService {
 
     const toelichtingValue =
       subtypeConfig.toelichtingOptions.find(
-        (option) => option.value === `T${selectedWerkzaamhedenValue}`
+        (option) => option.value === `W${selectedWerkzaamhedenValue}`
       )?.value ??
       values.toelichtingValue;
 
@@ -1195,6 +1273,33 @@ export class ArcgisJaarplanService {
         getField(table, FIELD_NAMES.locatiebezoek),
         values.locatiebezoekValue
       ),
+      [FIELD_NAMES.wlToelichting]: values.wlToelichting || null,
+      [FIELD_NAMES.werkinstructieUrl]: values.werkinstructieUrl || null,
+      [FIELD_NAMES.uitvoeringswijzeMaaien]: toFieldValue(
+        getField(table, FIELD_NAMES.uitvoeringswijzeMaaien),
+        values.uitvoeringswijzeMaaienValue
+      ),
+      [FIELD_NAMES.steekproefStatus]: toFieldValue(
+        getField(table, FIELD_NAMES.steekproefStatus),
+        values.steekproefStatus
+      ),
+      [FIELD_NAMES.steekproefOpmerking]: values.steekproefOpmerking || null,
+      [FIELD_NAMES.statusMaatregel]: toFieldValue(
+        getField(table, FIELD_NAMES.statusMaatregel),
+        values.statusMaatregel
+      ),
+      [FIELD_NAMES.periodeGepland]: toFieldValue(
+        getField(table, FIELD_NAMES.periodeGepland),
+        values.datumGepland
+      ),
+      [FIELD_NAMES.datumUitgevoerd]: toArcgisDateValue(values.datumUitgevoerd),
+      [FIELD_NAMES.datumMaaiselGeruimd]: toArcgisDateValue(values.datumMaaiselGeruimd),
+      [FIELD_NAMES.fotoUrl]: values.foto || null,
+      [FIELD_NAMES.redenNietUitgevoerd]: toFieldValue(
+        getField(table, FIELD_NAMES.redenNietUitgevoerd),
+        values.redenNietUitgevoerd
+      ),
+      [FIELD_NAMES.aannemerOpmerking]: values.opmerking || null,
     };
 
     const result = await table.applyEdits({
@@ -1219,24 +1324,84 @@ export class ArcgisJaarplanService {
       throw new Error("Nieuwe maatregel kon niet opnieuw worden opgehaald.");
     }
 
-    const globalId = toMeasureGlobalId(created.attributes as Record<string, unknown>);
-    persistLocalFields(globalId, addResult.objectId, {
-      statusMaatregel: values.statusMaatregel,
-      datumGepland: values.datumGepland,
-      datumUitgevoerd: values.datumUitgevoerd,
-      steekproefStatus: values.steekproefStatus,
-      redenNietUitgevoerd: values.redenNietUitgevoerd,
-      foto: values.foto,
-      opmerking: values.opmerking,
-    });
-
     const trajectByGlobalId = new Map(trajecten.map((traject) => [traject.globalId, traject]));
     return toJaarplanMeasure(created, metadata, trajectByGlobalId);
   }
 
+  async updateTrajectDetails(
+    globalId: string,
+    values: Pick<
+      JaarplanTrajectRecord,
+      "naam" | "functie" | "bodemklasse" | "uitvoerderOnderhoud" | "conceptGereedValue"
+    >
+  ): Promise<JaarplanTrajectRecord> {
+    const layer = await this.createTrajectLayer();
+
+    if (!isEditingEnabled(layer)) {
+      throw new Error("Bewerken is niet ingeschakeld voor de trajectlaag.");
+    }
+
+    const featureSet = await layer.queryFeatures({
+      where: `${FIELD_NAMES.globalId}='${globalId.replace(/'/g, "''")}'`,
+      outFields: ["*"],
+      returnGeometry: false,
+    });
+    const current = featureSet.features[0];
+
+    if (!current) {
+      throw new Error("Traject kon niet worden gevonden.");
+    }
+
+    const objectId = Number(current.attributes.OBJECTID);
+    const result = await layer.applyEdits({
+      updateFeatures: [
+        new Graphic({
+          attributes: {
+            OBJECTID: objectId,
+            [FIELD_NAMES.naam]: values.naam || null,
+            [FIELD_NAMES.functie]: toFieldValue(
+              getField(layer, FIELD_NAMES.functie),
+              values.functie
+            ),
+            [FIELD_NAMES.bodemklasse]: toFieldValue(
+              getField(layer, FIELD_NAMES.bodemklasse),
+              values.bodemklasse
+            ),
+            [FIELD_NAMES.uitvoerderOnderhoud]: toFieldValue(
+              getField(layer, FIELD_NAMES.uitvoerderOnderhoud),
+              values.uitvoerderOnderhoud
+            ),
+            [FIELD_NAMES.conceptGereed]: toFieldValue(
+              getField(layer, FIELD_NAMES.conceptGereed),
+              values.conceptGereedValue
+            ),
+          },
+        }),
+      ],
+    });
+    const updateResult = result.updateFeatureResults?.[0];
+
+    if (updateResult?.error) {
+      throw new Error(updateResult.error.message);
+    }
+
+    const refreshed = await layer.queryFeatures({
+      objectIds: [objectId],
+      outFields: ["*"],
+      returnGeometry: false,
+    });
+    const updated = refreshed.features[0];
+
+    if (!updated) {
+      throw new Error("Bijgewerkt traject kon niet opnieuw worden opgehaald.");
+    }
+
+    return toJaarplanTraject(updated);
+  }
+
   async updateMeasureServerFields(
     globalId: string,
-    values: JaarplanMeasureServerInput,
+    values: JaarplanMeasureFormValues,
     metadata: JaarplanMetadata,
     trajecten: JaarplanTrajectRecord[]
   ): Promise<JaarplanMeasureRecord> {
@@ -1298,6 +1463,33 @@ export class ArcgisJaarplanService {
               getField(table, FIELD_NAMES.locatiebezoek),
               values.locatiebezoekValue
             ),
+            [FIELD_NAMES.wlToelichting]: values.wlToelichting || null,
+            [FIELD_NAMES.werkinstructieUrl]: values.werkinstructieUrl || null,
+            [FIELD_NAMES.uitvoeringswijzeMaaien]: toFieldValue(
+              getField(table, FIELD_NAMES.uitvoeringswijzeMaaien),
+              values.uitvoeringswijzeMaaienValue
+            ),
+            [FIELD_NAMES.steekproefStatus]: toFieldValue(
+              getField(table, FIELD_NAMES.steekproefStatus),
+              values.steekproefStatus
+            ),
+            [FIELD_NAMES.steekproefOpmerking]: values.steekproefOpmerking || null,
+            [FIELD_NAMES.statusMaatregel]: toFieldValue(
+              getField(table, FIELD_NAMES.statusMaatregel),
+              values.statusMaatregel
+            ),
+            [FIELD_NAMES.periodeGepland]: toFieldValue(
+              getField(table, FIELD_NAMES.periodeGepland),
+              values.datumGepland
+            ),
+            [FIELD_NAMES.datumUitgevoerd]: toArcgisDateValue(values.datumUitgevoerd),
+            [FIELD_NAMES.datumMaaiselGeruimd]: toArcgisDateValue(values.datumMaaiselGeruimd),
+            [FIELD_NAMES.fotoUrl]: values.foto || null,
+            [FIELD_NAMES.redenNietUitgevoerd]: toFieldValue(
+              getField(table, FIELD_NAMES.redenNietUitgevoerd),
+              values.redenNietUitgevoerd
+            ),
+            [FIELD_NAMES.aannemerOpmerking]: values.opmerking || null,
           },
         }),
       ],
@@ -1342,8 +1534,6 @@ export class ArcgisJaarplanService {
     }
 
     const objectId = Number(current.attributes.OBJECTID);
-    const resolvedGlobalId = toMeasureGlobalId(current.attributes as Record<string, unknown>);
-
     const result = await table.applyEdits({
       deleteFeatures: [
         new Graphic({
@@ -1358,20 +1548,6 @@ export class ArcgisJaarplanService {
     if (deleteResult?.error) {
       throw new Error(deleteResult.error.message);
     }
-
-    removePersistedLocalFields(resolvedGlobalId, objectId);
-  }
-
-  updateMeasureLocalFields(
-    measure: JaarplanMeasureRecord,
-    updates: Partial<JaarplanLocalFields>
-  ): JaarplanMeasureRecord {
-    const localFields = persistLocalFields(measure.globalId, measure.objectId, updates);
-
-    return {
-      ...measure,
-      ...localFields,
-    };
   }
 
   getSteekproefStatusLabel(value: SteekproefStatus): string {

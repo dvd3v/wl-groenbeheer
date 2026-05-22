@@ -85,25 +85,25 @@ export function getWerkperiodeLabels(measures: JaarplanMeasureRecord[]): string[
 export function getAggregatedMaatregelStatus(
   measures: JaarplanMeasureRecord[]
 ): MaatregelStatus {
-  const statuses = measures.map((measure) => measure.statusMaatregel);
+  const statuses = measures.map((measure) => measure.statusMaatregel.toLowerCase());
 
   if (statuses.includes("niet_uitgevoerd")) {
-    return "niet_uitgevoerd";
+    return "Niet_uitgevoerd";
   }
 
   if (statuses.includes("deels_uitgevoerd")) {
-    return "deels_uitgevoerd";
+    return "Deels_uitgevoerd";
   }
 
   if (statuses.includes("gepland")) {
-    return "gepland";
+    return "Gepland";
   }
 
   if (statuses.includes("uitgevoerd")) {
-    return "uitgevoerd";
+    return "Uitgevoerd";
   }
 
-  return "geen_status";
+  return "";
 }
 
 export function getFilteredJaarplanGroups(
@@ -132,7 +132,11 @@ export function getFilteredJaarplanGroups(
       filters.steekproefStatus
   );
   const trajectoryFiltersActive = Boolean(
-    filters.trajectCode || filters.uitvoerderOnderhoud || filters.hasMeasuresOnly
+    filters.trajectCode ||
+      filters.uitvoerderOnderhoud ||
+      filters.hasMeasuresOnly ||
+      filters.correctOnly ||
+      filters.conceptGereedOnly
   );
 
   return trajecten
@@ -151,6 +155,14 @@ export function getFilteredJaarplanGroups(
       }
 
       if (filters.hasMeasuresOnly && trajectMeasures.length === 0) {
+        return null;
+      }
+
+      if (filters.correctOnly && traject.status !== 2) {
+        return null;
+      }
+
+      if (filters.conceptGereedOnly && !traject.conceptGereed) {
         return null;
       }
 

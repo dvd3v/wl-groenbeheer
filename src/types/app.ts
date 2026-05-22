@@ -47,6 +47,11 @@ export interface SpatialTrajectFeature {
   globalId: string;
   guid: string;
   trajectCode: string;
+  naam: string;
+  aanpassenDoor: string;
+  functie: string;
+  uitvoerderOnderhoud: string;
+  bodemklasse: string;
   typeCodering: string;
   objectCount: number | null;
   bronlagen: string;
@@ -184,12 +189,19 @@ export interface SharedJaarplanFilters {
   datumUitgevoerd: string;
   steekproefStatus: string;
   hasMeasuresOnly: boolean;
+  correctOnly: boolean;
+  conceptGereedOnly: boolean;
 }
 
 export interface AttributeFormValues {
   trajectCode: string;
   status: number;
   opmerking: string;
+  naam: string;
+  aanpassenDoor: string;
+  functie: string;
+  uitvoerderOnderhoud: string;
+  bodemklasse: string;
 }
 
 export interface JaarplanTrajectRecord {
@@ -197,7 +209,13 @@ export interface JaarplanTrajectRecord {
   globalId: string;
   guid: string;
   trajectCode: string;
+  naam: string;
+  functie: string;
+  bodemklasse: string;
   uitvoerderOnderhoud: string;
+  status: number | null;
+  conceptGereed: boolean;
+  conceptGereedValue: string;
   geometry: Geometry | null;
 }
 
@@ -218,6 +236,7 @@ export interface JaarplanSubtypeConfig {
 
 export interface JaarplanMetadata {
   editable: boolean;
+  trajectEditable: boolean;
   relationshipId: number | null;
   regimeOptions: JaarplanDomainOption[];
   subtypeField: string | null;
@@ -236,25 +255,26 @@ export interface JaarplanMetadata {
   afvoerenOptions: JaarplanDomainOption[];
   jaNeeOptions: JaarplanDomainOption[];
   uitvoerderOptions: JaarplanDomainOption[];
+  uitvoeringswijzeMaaienOptions: JaarplanDomainOption[];
+  steekproefStatusOptions: JaarplanDomainOption[];
+  statusMaatregelOptions: JaarplanDomainOption[];
+  redenNietUitgevoerdOptions: JaarplanDomainOption[];
+  trajectFieldOptions: {
+    functie: JaarplanDomainOption[];
+    bodemklasse: JaarplanDomainOption[];
+    uitvoerderOnderhoud: JaarplanDomainOption[];
+  };
 }
 
-export type SteekproefStatus =
-  | "niet_beoordeeld"
-  | "ingepland"
-  | "goedgekeurd"
-  | "afgekeurd";
+export type SteekproefStatus = string;
 
-export type MaatregelStatus =
-  | "geen_status"
-  | "gepland"
-  | "uitgevoerd"
-  | "deels_uitgevoerd"
-  | "niet_uitgevoerd";
+export type MaatregelStatus = string;
 
 export interface JaarplanLocalFields {
   statusMaatregel: MaatregelStatus;
   datumGepland: string;
   datumUitgevoerd: string;
+  datumMaaiselGeruimd: string;
   steekproefStatus: SteekproefStatus;
   redenNietUitgevoerd: string;
   foto: string;
@@ -288,6 +308,11 @@ export interface JaarplanMeasureRecord extends JaarplanLocalFields {
   locatiebezoekValue: string;
   locatiebezoekLabel: string;
   locatiebezoek: boolean;
+  wlToelichting: string;
+  werkinstructieUrl: string;
+  uitvoeringswijzeMaaienValue: string;
+  uitvoeringswijzeMaaienLabel: string;
+  steekproefOpmerking: string;
 }
 
 export interface JaarplanMeasureServerInput {
@@ -302,6 +327,10 @@ export interface JaarplanMeasureServerInput {
   afvoerenValue: string;
   soortspecifiekeMaatValue: string;
   locatiebezoekValue: string;
+  wlToelichting: string;
+  werkinstructieUrl: string;
+  uitvoeringswijzeMaaienValue: string;
+  steekproefOpmerking: string;
 }
 
 export interface JaarplanMeasureFormValues extends JaarplanMeasureServerInput, JaarplanLocalFields {}

@@ -53,6 +53,7 @@ interface AppState {
   addPlanningItem: (item: PlannedWorkItem) => void;
   updatePlanningItem: (workId: string, partial: Partial<PlannedWorkItem>) => void;
   upsertJaarplanMeasure: (item: JaarplanMeasureRecord) => void;
+  upsertJaarplanTraject: (item: JaarplanTrajectRecord) => void;
   setJaarplanMeasures: (items: JaarplanMeasureRecord[]) => void;
   removeJaarplanMeasure: (globalId: string) => void;
   setJaarplanFilters: (filters: Partial<SharedJaarplanFilters>) => void;
@@ -93,6 +94,8 @@ export const DEFAULT_JAARPLAN_SHARED_FILTERS: SharedJaarplanFilters = {
   datumUitgevoerd: "",
   steekproefStatus: "",
   hasMeasuresOnly: false,
+  correctOnly: false,
+  conceptGereedOnly: false,
 };
 
 function sortTrajecten(trajecten: TrajectRecord[]) {
@@ -235,6 +238,20 @@ export const useAppStore = create<AppState>((set) => ({
 
       return {
         jaarplanMeasures: sortJaarplanMeasures(measures),
+      };
+    }),
+  upsertJaarplanTraject: (item) =>
+    set((state) => {
+      const trajecten = state.jaarplanTrajecten.some(
+        (current) => current.globalId === item.globalId
+      )
+        ? state.jaarplanTrajecten.map((current) =>
+            current.globalId === item.globalId ? item : current
+          )
+        : [...state.jaarplanTrajecten, item];
+
+      return {
+        jaarplanTrajecten: sortJaarplanTrajecten(trajecten),
       };
     }),
   setJaarplanMeasures: (items) =>
