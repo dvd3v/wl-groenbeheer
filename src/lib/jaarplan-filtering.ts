@@ -169,7 +169,12 @@ export function getFilteredJaarplanGroups(
       const trajectoryMatchesSearch =
         !filters.search ||
         includesText(traject.trajectCode, filters.search) ||
-        includesText(traject.uitvoerderOnderhoud, filters.search);
+        includesText(traject.naam, filters.search) ||
+        includesText(traject.uitvoerderOnderhoud, filters.search) ||
+        includesText(traject.type, filters.search) ||
+        includesText(traject.bovenbreedte, filters.search) ||
+        includesText(traject.werkpadBreedte, filters.search) ||
+        includesText(traject.stakeholderInformatie, filters.search);
 
       const matchingMeasures = trajectMeasures.filter((measure) => {
         const matchesSearch =
@@ -177,7 +182,8 @@ export function getFilteredJaarplanGroups(
           includesText(measure.werkzaamheidLabel, filters.search) ||
           includesText(measure.toelichtingLabel, filters.search) ||
           includesText(measure.opmerking, filters.search) ||
-          includesText(measure.redenNietUitgevoerd, filters.search);
+          includesText(measure.redenNietUitgevoerd, filters.search) ||
+          includesText(measure.redenAfgekeurd, filters.search);
 
         return (
           matchesSearch &&

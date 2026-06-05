@@ -42,6 +42,9 @@ interface TrajectReviewPanelProps {
     functie: JaarplanDomainOption[];
     uitvoerderOnderhoud: JaarplanDomainOption[];
     bodemklasse: JaarplanDomainOption[];
+    type: JaarplanDomainOption[];
+    bovenbreedte: JaarplanDomainOption[];
+    werkpadBreedte: JaarplanDomainOption[];
   };
   review: TrajectReviewSummary | null;
   saving: boolean;
@@ -272,6 +275,10 @@ export function TrajectReviewPanel({
           functie: selectedJaarplanTraject.functie,
           bodemklasse: selectedJaarplanTraject.bodemklasse,
           uitvoerderOnderhoud: selectedJaarplanTraject.uitvoerderOnderhoud,
+          type: selectedJaarplanTraject.type,
+          bovenbreedte: selectedJaarplanTraject.bovenbreedte,
+          werkpadBreedte: selectedJaarplanTraject.werkpadBreedte,
+          stakeholderInformatie: selectedJaarplanTraject.stakeholderInformatie,
           conceptGereedValue: checked ? "1" : "0",
         }
       );
@@ -392,6 +399,42 @@ export function TrajectReviewPanel({
             </label>
 
             <label className="block space-y-1.5">
+              <span className="text-[11px] text-textDim">Opmerking</span>
+              <Textarea
+                rows={4}
+                value={draftValues.opmerking}
+                onChange={(event) => onDraftChange("opmerking", event.target.value)}
+                placeholder="Leg twijfel, afkeur of aandachtspunten vast"
+              />
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-[11px] text-textDim">Aanpassen door</span>
+              <NativeSelect
+                value={draftValues.aanpassenDoor}
+                onChange={(event) => onDraftChange("aanpassenDoor", event.target.value)}
+              >
+                <option value="">—</option>
+                {fieldOptions.aanpassenDoor.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          </section>
+
+          <section className="space-y-3 rounded-card border border-border bg-surfaceAlt/70 p-4">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                Trajectgegevens
+              </div>
+              <div className="mt-1 text-[12px] text-textDim">
+                Basisgegevens, profiel en stakeholderafspraken voor dit traject.
+              </div>
+            </div>
+
+            <label className="block space-y-1.5">
               <span className="text-[11px] text-textDim">Naam</span>
               <Input
                 value={draftValues.naam}
@@ -402,13 +445,43 @@ export function TrajectReviewPanel({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block space-y-1.5">
-                <span className="text-[11px] text-textDim">Aanpassen door</span>
+                <span className="text-[11px] text-textDim">Functie</span>
                 <NativeSelect
-                  value={draftValues.aanpassenDoor}
-                  onChange={(event) => onDraftChange("aanpassenDoor", event.target.value)}
+                  value={draftValues.functie}
+                  onChange={(event) => onDraftChange("functie", event.target.value)}
                 >
                   <option value="">—</option>
-                  {fieldOptions.aanpassenDoor.map((option) => (
+                  {fieldOptions.functie.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] text-textDim">Type</span>
+                <NativeSelect
+                  value={draftValues.type}
+                  onChange={(event) => onDraftChange("type", event.target.value)}
+                >
+                  <option value="">—</option>
+                  {fieldOptions.type.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] text-textDim">Uitvoerder onderhoud</span>
+                <NativeSelect
+                  value={draftValues.uitvoerderOnderhoud}
+                  onChange={(event) => onDraftChange("uitvoerderOnderhoud", event.target.value)}
+                >
+                  <option value="">—</option>
+                  {fieldOptions.uitvoerderOnderhoud.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -430,73 +503,75 @@ export function TrajectReviewPanel({
                   ))}
                 </NativeSelect>
               </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] text-textDim">Bovenbreedte</span>
+                <NativeSelect
+                  value={draftValues.bovenbreedte}
+                  onChange={(event) => onDraftChange("bovenbreedte", event.target.value)}
+                >
+                  <option value="">—</option>
+                  {fieldOptions.bovenbreedte.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] text-textDim">Werkpad breedte</span>
+                <NativeSelect
+                  value={draftValues.werkpadBreedte}
+                  onChange={(event) => onDraftChange("werkpadBreedte", event.target.value)}
+                >
+                  <option value="">—</option>
+                  {fieldOptions.werkpadBreedte.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
             </div>
 
             <label className="block space-y-1.5">
-              <span className="text-[11px] text-textDim">Functie</span>
-              <NativeSelect
-                value={draftValues.functie}
-                onChange={(event) => onDraftChange("functie", event.target.value)}
-              >
-                <option value="">—</option>
-                {fieldOptions.functie.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-[11px] text-textDim">Uitvoerder onderhoud</span>
-              <NativeSelect
-                value={draftValues.uitvoerderOnderhoud}
-                onChange={(event) => onDraftChange("uitvoerderOnderhoud", event.target.value)}
-              >
-                <option value="">—</option>
-                {fieldOptions.uitvoerderOnderhoud.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-[11px] text-textDim">Opmerking</span>
+              <span className="text-[11px] text-textDim">Stakeholder informatie</span>
               <Textarea
-                rows={4}
-                value={draftValues.opmerking}
-                onChange={(event) => onDraftChange("opmerking", event.target.value)}
-                placeholder="Leg twijfel, afkeur of aandachtspunten vast"
+                rows={3}
+                value={draftValues.stakeholderInformatie}
+                onChange={(event) =>
+                  onDraftChange("stakeholderInformatie", event.target.value)
+                }
+                placeholder="Afspraken en aandachtspunten voor dit traject"
               />
             </label>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button onClick={onSave} disabled={saving || deleting}>
-                <Save className="h-3.5 w-3.5" />
-                {saving ? "Opslaan..." : "Opslaan"}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={onSaveAndNext}
-                disabled={saving || deleting || !canSelectNext}
-              >
-                <Save className="h-3.5 w-3.5" />
-                Opslaan en volgende
-              </Button>
-              {selectedTraject && !selectedTraject.guid.trim() ? (
-                <Button
-                  variant="outline"
-                  className="border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white"
-                  onClick={onDelete}
-                  disabled={saving || deleting}
-                >
-                  {deleting ? "Verwijderen..." : "Nieuwe geometrie verwijderen"}
-                </Button>
-              ) : null}
-            </div>
           </section>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button onClick={onSave} disabled={saving || deleting}>
+              <Save className="h-3.5 w-3.5" />
+              {saving ? "Opslaan..." : "Opslaan"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={onSaveAndNext}
+              disabled={saving || deleting || !canSelectNext}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Opslaan en volgende
+            </Button>
+            {selectedTraject && !selectedTraject.guid.trim() ? (
+              <Button
+                variant="outline"
+                className="border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white"
+                onClick={onDelete}
+                disabled={saving || deleting}
+              >
+                {deleting ? "Verwijderen..." : "Nieuwe geometrie verwijderen"}
+              </Button>
+            ) : null}
+          </div>
           </>
           ) : (
           <>

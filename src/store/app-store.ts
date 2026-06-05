@@ -29,6 +29,8 @@ interface AppState {
   selectedGlobalId: string | null;
   selectedObjectId: number | null;
   mapSelectionSource: MapSelectionSource;
+  bulkSelectionMode: boolean;
+  bulkSelectedTrajectIds: string[];
   editingMode: EditingMode;
   attributeDrawerOpen: boolean;
   pendingGeometryEdits: PendingGeometryEdits | null;
@@ -62,6 +64,10 @@ interface AppState {
   setJaarplanZoomTargetGlobalId: (globalId: string | null) => void;
   setJaarplanMapViewState: (viewState: MapViewState | null) => void;
   selectTraject: (globalId: string | null, source: MapSelectionSource) => void;
+  setBulkSelectionMode: (enabled: boolean) => void;
+  toggleBulkSelectedTraject: (globalId: string) => void;
+  setBulkSelectedTrajects: (globalIds: string[]) => void;
+  clearBulkSelectedTrajects: () => void;
   setEditingMode: (mode: EditingMode) => void;
   setAttributeDrawerOpen: (open: boolean) => void;
   setPendingGeometryEdits: (pending: PendingGeometryEdits | null) => void;
@@ -111,6 +117,102 @@ function normalizeTraject(traject: TrajectRecord): TrajectRecord {
   };
 }
 
+function mergeTrajectRecord(
+  current: TrajectRecord | undefined,
+  next: TrajectRecord
+): TrajectRecord {
+  const normalized = normalizeTraject(next);
+
+  return {
+    ...(current ?? normalized),
+    ...normalized,
+    geometry: normalized.geometry ?? current?.geometry ?? null,
+    shapeArea: normalized.shapeArea ?? current?.shapeArea ?? null,
+    shapeLength: normalized.shapeLength ?? current?.shapeLength ?? null,
+  };
+}
+
+function toJaarplanTrajectRecord(
+  traject: TrajectRecord,
+  current?: JaarplanTrajectRecord
+): JaarplanTrajectRecord {
+  return {
+    objectId: traject.objectId,
+    globalId: traject.globalId,
+    guid: traject.guid,
+    trajectCode: traject.trajectCode,
+    naam: traject.naam,
+    functie: traject.functie,
+    bodemklasse: traject.bodemklasse,
+    uitvoerderOnderhoud: traject.uitvoerderOnderhoud,
+    type: traject.type,
+    bovenbreedte: traject.bovenbreedte,
+    werkpadBreedte: traject.werkpadBreedte,
+    stakeholderInformatie: traject.stakeholderInformatie,
+    status: traject.status,
+    conceptGereed: current?.conceptGereed ?? false,
+    conceptGereedValue: current?.conceptGereedValue ?? "",
+    geometry: traject.geometry ?? current?.geometry ?? null,
+  };
+}
+
+function mergeJaarplanTrajectRecord(
+  current: JaarplanTrajectRecord | undefined,
+  next: JaarplanTrajectRecord
+): JaarplanTrajectRecord {
+  return {
+    ...(current ?? next),
+    ...next,
+    geometry: next.geometry ?? current?.geometry ?? null,
+  };
+}
+
+function mergeTrajectFromJaarplan(
+  current: TrajectRecord | undefined,
+  traject: JaarplanTrajectRecord
+): TrajectRecord | null {
+  if (!current && !traject.geometry) {
+    return null;
+  }
+
+  return {
+    objectId: current?.objectId ?? traject.objectId,
+    globalId: current?.globalId ?? traject.globalId,
+    guid: current?.guid ?? traject.guid,
+    trajectCode: traject.trajectCode,
+    naam: traject.naam,
+    aanpassenDoor: current?.aanpassenDoor ?? "",
+    functie: traject.functie,
+    uitvoerderOnderhoud: traject.uitvoerderOnderhoud,
+    bodemklasse: traject.bodemklasse,
+    type: traject.type,
+    bovenbreedte: traject.bovenbreedte,
+    werkpadBreedte: traject.werkpadBreedte,
+    stakeholderInformatie: traject.stakeholderInformatie,
+    typeCodering: current?.typeCodering ?? "",
+    objectCount: current?.objectCount ?? null,
+    bronlagen: current?.bronlagen ?? "",
+    status: Number(traject.status ?? current?.status ?? 1),
+    opmerking: current?.opmerking ?? "",
+    shapeArea: current?.shapeArea ?? null,
+    shapeLength: current?.shapeLength ?? null,
+    geometry: current?.geometry ?? traject.geometry ?? null,
+  };
+}
+
+function syncMeasureTrajectCode(
+  measures: JaarplanMeasureRecord[],
+  trajectGlobalId: string,
+  trajectCode: string
+) {
+  return measures.map((measure) =>
+    measure.trajectGlobalId === trajectGlobalId ||
+    measure.trajectGuid === trajectGlobalId
+      ? { ...measure, trajectCode }
+      : measure
+  );
+}
+
 function sortJaarplanTrajecten(trajecten: JaarplanTrajectRecord[]) {
   return [...trajecten].sort((left, right) =>
     left.trajectCode.localeCompare(right.trajectCode, "nl")
@@ -149,6 +251,8 @@ export const useAppStore = create<AppState>((set) => ({
   selectedGlobalId: null,
   selectedObjectId: null,
   mapSelectionSource: null,
+  bulkSelectionMode: false,
+  bulkSelectedTrajectIds: [],
   editingMode: "idle",
   attributeDrawerOpen: false,
   pendingGeometryEdits: null,
@@ -184,7 +288,10 @@ export const useAppStore = create<AppState>((set) => ({
   setJaarplanError: (jaarplanError) => set({ jaarplanError }),
   upsertTraject: (traject) =>
     set((state) => {
-      const normalizedTraject = normalizeTraject(traject);
+      const currentTraject = state.trajecten.find(
+        (item) => item.globalId === traject.globalId
+      );
+      const normalizedTraject = mergeTrajectRecord(currentTraject, traject);
       const trajecten = state.trajecten.some(
         (item) => item.globalId === normalizedTraject.globalId
       )
@@ -192,9 +299,36 @@ export const useAppStore = create<AppState>((set) => ({
             item.globalId === normalizedTraject.globalId ? normalizedTraject : item
           )
         : [...state.trajecten, normalizedTraject];
+      const currentJaarplanTraject = state.jaarplanTrajecten.find(
+        (item) => item.globalId === normalizedTraject.globalId
+      );
+      const syncedJaarplanTraject = toJaarplanTrajectRecord(
+        normalizedTraject,
+        currentJaarplanTraject
+      );
+      const jaarplanTrajecten =
+        currentJaarplanTraject || state.jaarplanTrajecten.length
+          ? state.jaarplanTrajecten.some(
+              (item) => item.globalId === syncedJaarplanTraject.globalId
+            )
+            ? state.jaarplanTrajecten.map((item) =>
+                item.globalId === syncedJaarplanTraject.globalId
+                  ? mergeJaarplanTrajectRecord(item, syncedJaarplanTraject)
+                  : item
+              )
+            : [...state.jaarplanTrajecten, syncedJaarplanTraject]
+          : state.jaarplanTrajecten;
 
       return {
         trajecten: sortTrajecten(trajecten),
+        jaarplanTrajecten: sortJaarplanTrajecten(jaarplanTrajecten),
+        jaarplanMeasures: sortJaarplanMeasures(
+          syncMeasureTrajectCode(
+            state.jaarplanMeasures,
+            normalizedTraject.globalId,
+            normalizedTraject.trajectCode
+          )
+        ),
         selectedGlobalId: normalizedTraject.globalId,
         selectedObjectId: normalizedTraject.objectId,
       };
@@ -208,6 +342,7 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         trajecten,
         planningItems: state.planningItems.filter((item) => item.trajectGlobalId !== globalId),
+        bulkSelectedTrajectIds: state.bulkSelectedTrajectIds.filter((item) => item !== globalId),
         selectedGlobalId,
         selectedObjectId:
           selectedGlobalId === null
@@ -242,16 +377,45 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   upsertJaarplanTraject: (item) =>
     set((state) => {
+      const mergedJaarplanTraject = mergeJaarplanTrajectRecord(
+        state.jaarplanTrajecten.find((current) => current.globalId === item.globalId),
+        item
+      );
       const trajecten = state.jaarplanTrajecten.some(
-        (current) => current.globalId === item.globalId
+        (current) => current.globalId === mergedJaarplanTraject.globalId
       )
         ? state.jaarplanTrajecten.map((current) =>
-            current.globalId === item.globalId ? item : current
+            current.globalId === mergedJaarplanTraject.globalId
+              ? mergedJaarplanTraject
+              : current
           )
-        : [...state.jaarplanTrajecten, item];
+        : [...state.jaarplanTrajecten, mergedJaarplanTraject];
+      const syncedTraject = mergeTrajectFromJaarplan(
+        state.trajecten.find((current) => current.globalId === mergedJaarplanTraject.globalId),
+        mergedJaarplanTraject
+      );
+      const spatialTrajecten = syncedTraject
+        ? state.trajecten.some((current) => current.globalId === syncedTraject.globalId)
+          ? state.trajecten.map((current) =>
+              current.globalId === syncedTraject.globalId ? syncedTraject : current
+            )
+          : [...state.trajecten, syncedTraject]
+        : state.trajecten;
 
       return {
         jaarplanTrajecten: sortJaarplanTrajecten(trajecten),
+        jaarplanMeasures: sortJaarplanMeasures(
+          syncMeasureTrajectCode(
+            state.jaarplanMeasures,
+            mergedJaarplanTraject.globalId,
+            mergedJaarplanTraject.trajectCode
+          )
+        ),
+        trajecten: sortTrajecten(spatialTrajecten),
+        selectedObjectId:
+          state.selectedGlobalId === mergedJaarplanTraject.globalId
+            ? syncedTraject?.objectId ?? state.selectedObjectId
+            : state.selectedObjectId,
       };
     }),
   setJaarplanMeasures: (items) =>
@@ -293,6 +457,18 @@ export const useAppStore = create<AppState>((set) => ({
         mapSelectionSource: source,
       };
     }),
+  setBulkSelectionMode: (bulkSelectionMode) => set({ bulkSelectionMode }),
+  toggleBulkSelectedTraject: (globalId) =>
+    set((state) => ({
+      bulkSelectedTrajectIds: state.bulkSelectedTrajectIds.includes(globalId)
+        ? state.bulkSelectedTrajectIds.filter((item) => item !== globalId)
+        : [...state.bulkSelectedTrajectIds, globalId],
+    })),
+  setBulkSelectedTrajects: (globalIds) =>
+    set(() => ({
+      bulkSelectedTrajectIds: [...new Set(globalIds)],
+    })),
+  clearBulkSelectedTrajects: () => set({ bulkSelectedTrajectIds: [] }),
   setEditingMode: (editingMode) => set({ editingMode }),
   setAttributeDrawerOpen: (attributeDrawerOpen) => set({ attributeDrawerOpen }),
   setPendingGeometryEdits: (pendingGeometryEdits) => set({ pendingGeometryEdits }),

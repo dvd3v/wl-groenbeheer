@@ -1,4 +1,4 @@
-import { PencilRuler, Plus } from "lucide-react";
+import { CheckSquare, PencilRuler, Plus } from "lucide-react";
 import type { TrajectRendererMode } from "../../types/app";
 import { Button } from "../ui/button";
 import { NativeSelect } from "../ui/native-select";
@@ -7,9 +7,12 @@ interface MapToolbarProps {
   disabledAdd: boolean;
   disabledEdit: boolean;
   disabledReason?: string;
+  bulkSelectionMode: boolean;
+  bulkSelectedCount: number;
   rendererMode: TrajectRendererMode;
   onAddTraject: () => void;
   onEditShape: () => void;
+  onToggleBulkSelection: () => void;
   onRendererModeChange: (mode: TrajectRendererMode) => void;
 }
 
@@ -17,9 +20,12 @@ export function MapToolbar({
   disabledAdd,
   disabledEdit,
   disabledReason,
+  bulkSelectionMode,
+  bulkSelectedCount,
   rendererMode,
   onAddTraject,
   onEditShape,
+  onToggleBulkSelection,
   onRendererModeChange,
 }: MapToolbarProps) {
   return (
@@ -40,6 +46,13 @@ export function MapToolbar({
       >
         <PencilRuler className="h-3.5 w-3.5" />
         Vorm aanpassen
+      </Button>
+      <Button
+        variant={bulkSelectionMode ? "secondary" : "outline"}
+        onClick={onToggleBulkSelection}
+      >
+        <CheckSquare className="h-3.5 w-3.5" />
+        Bulk selecteren{bulkSelectedCount ? ` (${bulkSelectedCount})` : ""}
       </Button>
       <div className="min-w-[180px]">
         <NativeSelect

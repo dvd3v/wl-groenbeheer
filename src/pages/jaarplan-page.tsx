@@ -3,6 +3,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { JaarplanFilterPanel } from "../components/jaarplan/jaarplan-filter-panel";
 import { MaatregelForm } from "../components/jaarplan/maatregel-form";
+import { BulkMeasurePlanningPanel } from "../components/traject/bulk-measure-planning-panel";
+import { BulkTrajectEditPanel } from "../components/traject/bulk-traject-edit-panel";
 import {
   MeasureSignals,
   getJaarplanRegimePalette,
@@ -13,6 +15,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { NativeSelect } from "../components/ui/native-select";
 import { Switch } from "../components/ui/switch";
+import { Textarea } from "../components/ui/textarea";
 import { arcgisJaarplanService } from "../services/arcgis-jaarplan-service";
 import {
   getFilteredJaarplanGroups,
@@ -21,6 +24,7 @@ import {
 } from "../lib/jaarplan-filtering";
 import { useAppStore } from "../store/app-store";
 import type {
+  BulkTrajectUpdateFields,
   JaarplanMeasureFormValues,
   JaarplanMeasureRecord,
   JaarplanTrajectRecord,
@@ -31,6 +35,7 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 type TrajectDetailsDraft = Pick<
   JaarplanTrajectRecord,
   "naam" | "functie" | "bodemklasse" | "uitvoerderOnderhoud"
+  | "type" | "bovenbreedte" | "werkpadBreedte" | "stakeholderInformatie"
   | "conceptGereedValue"
 >;
 
@@ -51,6 +56,8 @@ function toMeasureDraft(measure: JaarplanMeasureRecord): JaarplanMeasureFormValu
     werkinstructieUrl: measure.werkinstructieUrl,
     uitvoeringswijzeMaaienValue: measure.uitvoeringswijzeMaaienValue,
     steekproefOpmerking: measure.steekproefOpmerking,
+    redenAfgekeurd: measure.redenAfgekeurd,
+    datumSteekproef: measure.datumSteekproef,
     statusMaatregel: measure.statusMaatregel,
     datumGepland: measure.datumGepland,
     datumUitgevoerd: measure.datumUitgevoerd,
@@ -75,6 +82,10 @@ function toTrajectDetailsDraft(traject: JaarplanTrajectRecord): TrajectDetailsDr
     functie: traject.functie,
     bodemklasse: traject.bodemklasse,
     uitvoerderOnderhoud: traject.uitvoerderOnderhoud,
+    type: traject.type,
+    bovenbreedte: traject.bovenbreedte,
+    werkpadBreedte: traject.werkpadBreedte,
+    stakeholderInformatie: traject.stakeholderInformatie,
     conceptGereedValue: traject.conceptGereed ? "1" : "0",
   };
 }
@@ -90,6 +101,7 @@ export function JaarplanPage() {
   const setJaarplanFilters = useAppStore((state) => state.setJaarplanFilters);
   const resetJaarplanFilters = useAppStore((state) => state.resetJaarplanFilters);
   const selectedTrajectId = useAppStore((state) => state.selectedJaarplanTrajectId);
+  const bulkSelectedTrajectIds = useAppStore((state) => state.bulkSelectedTrajectIds);
   const selectJaarplanTraject = useAppStore((state) => state.selectJaarplanTraject);
   const selectTraject = useAppStore((state) => state.selectTraject);
   const setZoomTargetGlobalId = useAppStore((state) => state.setZoomTargetGlobalId);
@@ -99,12 +111,21 @@ export function JaarplanPage() {
   const upsertJaarplanMeasure = useAppStore((state) => state.upsertJaarplanMeasure);
   const upsertJaarplanTraject = useAppStore((state) => state.upsertJaarplanTraject);
   const removeJaarplanMeasure = useAppStore((state) => state.removeJaarplanMeasure);
+  const toggleBulkSelectedTraject = useAppStore((state) => state.toggleBulkSelectedTraject);
+  const setBulkSelectedTrajects = useAppStore((state) => state.setBulkSelectedTrajects);
+  const clearBulkSelectedTrajects = useAppStore((state) => state.clearBulkSelectedTrajects);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expandedMeasureIds, setExpandedMeasureIds] = useState<Record<string, boolean>>({});
   const [addingByTrajectId, setAddingByTrajectId] = useState<Record<string, boolean>>({});
   const [editingMeasureId, setEditingMeasureId] = useState<string | null>(null);
   const [savingTrajectId, setSavingTrajectId] = useState<string | null>(null);
   const [savingTrajectDetailsId, setSavingTrajectDetailsId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkMeasureSaving, setBulkMeasureSaving] = useState(false);
+  const [bulkMeasureError, setBulkMeasureError] = useState<string | null>(null);
+  const [bulkMeasureDraft, setBulkMeasureDraft] =
+    useState<JaarplanMeasureFormValues | null>(null);
   const [savingMeasureId, setSavingMeasureId] = useState<string | null>(null);
   const [deletingMeasureId, setDeletingMeasureId] = useState<string | null>(null);
   const [newMeasureByTrajectId, setNewMeasureByTrajectId] = useState<
@@ -187,6 +208,29 @@ export function JaarplanPage() {
     const start = (currentPage - 1) * pageSize;
     return groupedRows.slice(start, start + pageSize);
   }, [currentPage, groupedRows, pageSize]);
+  const paginatedTrajectIds = useMemo(
+    () => paginatedRows.map((group) => group.traject.globalId),
+    [paginatedRows]
+  );
+  const groupedTrajectIds = useMemo(
+    () => groupedRows.map((group) => group.traject.globalId),
+    [groupedRows]
+  );
+  const bulkSelectedTrajecten = useMemo(
+    () =>
+      bulkSelectedTrajectIds
+        .map((globalId) => trajecten.find((traject) => traject.globalId === globalId))
+        .filter((traject): traject is JaarplanTrajectRecord => Boolean(traject)),
+    [bulkSelectedTrajectIds, trajecten]
+  );
+  const selectedOnPageCount = paginatedTrajectIds.filter((globalId) =>
+    bulkSelectedTrajectIds.includes(globalId)
+  ).length;
+  const allPageTrajectenSelected =
+    paginatedTrajectIds.length > 0 && selectedOnPageCount === paginatedTrajectIds.length;
+  const allFilteredTrajectenSelected =
+    groupedTrajectIds.length > 0 &&
+    groupedTrajectIds.every((globalId) => bulkSelectedTrajectIds.includes(globalId));
 
   useEffect(() => {
     setPage(1);
@@ -211,6 +255,19 @@ export function JaarplanPage() {
     }));
     setPage(Math.floor(selectedIndex / pageSize) + 1);
   }, [groupedRows, pageSize, selectedTrajectId]);
+
+  useEffect(() => {
+    if (!metadata || !bulkSelectedTrajecten.length) {
+      setBulkMeasureDraft(null);
+      return;
+    }
+
+    setBulkMeasureDraft(
+      (current) =>
+        current ??
+        arcgisJaarplanService.createDefaultFormValues(metadata, bulkSelectedTrajecten[0])
+    );
+  }, [bulkSelectedTrajecten, metadata]);
 
   function handleSharedFilterChange<K extends keyof typeof sharedFilters>(
     key: K,
@@ -344,6 +401,139 @@ export function JaarplanPage() {
       setSavingTrajectDetailsId((current) =>
         current === traject.globalId ? null : current
       );
+    }
+  }
+
+  function selectPageTrajecten() {
+    const selected = new Set(bulkSelectedTrajectIds);
+
+    if (allPageTrajectenSelected) {
+      paginatedTrajectIds.forEach((globalId) => selected.delete(globalId));
+    } else {
+      paginatedTrajectIds.forEach((globalId) => selected.add(globalId));
+    }
+
+    setBulkSelectedTrajects([...selected]);
+    setBulkError(null);
+  }
+
+  function selectFilteredTrajecten() {
+    const selected = new Set(bulkSelectedTrajectIds);
+
+    if (allFilteredTrajectenSelected) {
+      groupedTrajectIds.forEach((globalId) => selected.delete(globalId));
+    } else {
+      groupedTrajectIds.forEach((globalId) => selected.add(globalId));
+    }
+
+    setBulkSelectedTrajects([...selected]);
+    setBulkError(null);
+  }
+
+  async function handleBulkSave(values: BulkTrajectUpdateFields) {
+    if (!metadata || !bulkSelectedTrajecten.length) {
+      return;
+    }
+
+    if (!metadata.trajectEditable) {
+      setBulkError("Bewerken is niet ingeschakeld voor de trajectlaag.");
+      return;
+    }
+
+    setBulkSaving(true);
+    setBulkError(null);
+
+    try {
+      for (const traject of bulkSelectedTrajecten) {
+        const updated = await arcgisJaarplanService.updateTrajectDetails(
+          traject.globalId,
+          {
+            naam: values.naam ?? traject.naam,
+            functie: values.functie ?? traject.functie,
+            bodemklasse: values.bodemklasse ?? traject.bodemklasse,
+            uitvoerderOnderhoud:
+              values.uitvoerderOnderhoud ?? traject.uitvoerderOnderhoud,
+            type: values.type ?? traject.type,
+            bovenbreedte: values.bovenbreedte ?? traject.bovenbreedte,
+            werkpadBreedte: values.werkpadBreedte ?? traject.werkpadBreedte,
+            stakeholderInformatie: traject.stakeholderInformatie,
+            conceptGereedValue:
+              values.conceptGereedValue ??
+              (traject.conceptGereed ? "1" : "0"),
+          }
+        );
+        upsertJaarplanTraject(updated);
+      }
+    } catch (error) {
+      setBulkError(
+        error instanceof Error ? error.message : "Bulk opslaan is mislukt."
+      );
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  function updateBulkMeasureDraft(
+    field: keyof JaarplanMeasureFormValues,
+    value: string
+  ) {
+    if (!metadata || !bulkSelectedTrajecten.length) {
+      return;
+    }
+
+    setBulkMeasureDraft((current) => {
+      const existing =
+        current ??
+        arcgisJaarplanService.createDefaultFormValues(metadata, bulkSelectedTrajecten[0]);
+      const next = {
+        ...existing,
+        [field]: value,
+      } as JaarplanMeasureFormValues;
+
+      if (field === "regimeValue" || field === "werkzaamhedenValue") {
+        return arcgisJaarplanService.syncSubtypeValues(
+          metadata,
+          next,
+          field === "regimeValue" ? "regimeValue" : "werkzaamhedenValue"
+        );
+      }
+
+      return next;
+    });
+  }
+
+  async function handleBulkCreateMeasures() {
+    if (!metadata || !bulkMeasureDraft || !bulkSelectedTrajecten.length) {
+      return;
+    }
+
+    if (!metadata.editable) {
+      setBulkMeasureError("Bewerken is niet ingeschakeld voor de maatregelentabel.");
+      return;
+    }
+
+    setBulkMeasureSaving(true);
+    setBulkMeasureError(null);
+
+    try {
+      for (const traject of bulkSelectedTrajecten) {
+        const created = await arcgisJaarplanService.createMeasure(
+          {
+            ...bulkMeasureDraft,
+            trajectGuid: traject.globalId,
+            trajectGlobalId: traject.globalId,
+          },
+          metadata,
+          trajecten
+        );
+        upsertJaarplanMeasure(created);
+      }
+    } catch (error) {
+      setBulkMeasureError(
+        error instanceof Error ? error.message : "Bulk plannen is mislukt."
+      );
+    } finally {
+      setBulkMeasureSaving(false);
     }
   }
 
@@ -527,6 +717,55 @@ export function JaarplanPage() {
           onReset={resetJaarplanFilters}
         />
 
+        {bulkSelectedTrajecten.length ? (
+          <div className="space-y-3">
+            <BulkTrajectEditPanel
+              title="Trajectgegevens bulk bewerken"
+              selectedCount={bulkSelectedTrajecten.length}
+              saving={bulkSaving}
+              fieldOptions={metadata.trajectFieldOptions}
+              disabled={!metadata.trajectEditable}
+              disabledMessage={
+                !metadata.trajectEditable
+                  ? "Bewerken is niet ingeschakeld voor de trajectlaag."
+                  : undefined
+              }
+              error={bulkError}
+              onSave={(values) => {
+                void handleBulkSave(values);
+              }}
+              onClearSelection={clearBulkSelectedTrajects}
+            />
+
+            {bulkMeasureDraft ? (
+              <BulkMeasurePlanningPanel
+                selectedCount={bulkSelectedTrajecten.length}
+                values={bulkMeasureDraft}
+                metadata={metadata}
+                steekproefStatusOptions={metadata.steekproefStatusOptions}
+                toelichtingText={arcgisJaarplanService.getMeasureToelichtingLabel(
+                  metadata,
+                  bulkMeasureDraft.regimeValue,
+                  bulkMeasureDraft.toelichtingValue
+                )}
+                saving={bulkMeasureSaving}
+                error={bulkMeasureError}
+                disabled={!metadata.editable}
+                disabledMessage={
+                  !metadata.editable
+                    ? "Bewerken is niet ingeschakeld voor de maatregelentabel."
+                    : undefined
+                }
+                onFieldChange={updateBulkMeasureDraft}
+                onSubmit={() => {
+                  void handleBulkCreateMeasures();
+                }}
+                onClearSelection={clearBulkSelectedTrajects}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
         <section className="overflow-hidden rounded-card border border-border bg-white shadow-panel">
           <div className="flex flex-col gap-3 border-b border-border bg-surface px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div className="text-[12px] text-textDim">
@@ -534,6 +773,20 @@ export function JaarplanPage() {
               {totalVisibleMeasures} maatregelen
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={selectPageTrajecten}
+                disabled={!paginatedTrajectIds.length}
+              >
+                {allPageTrajectenSelected ? "Pagina deselecteren" : "Selecteer pagina"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={selectFilteredTrajecten}
+                disabled={!groupedTrajectIds.length}
+              >
+                {allFilteredTrajectenSelected ? "Resultaat deselecteren" : "Selecteer resultaat"}
+              </Button>
               <Button
                 variant="ghost"
                 onClick={() =>
@@ -590,6 +843,21 @@ export function JaarplanPage() {
             <table className="min-w-full border-collapse text-[12px]">
               <thead className="sticky top-0 z-10 bg-surfaceAlt">
                 <tr>
+                  <th className="w-10 px-3 py-3 text-left font-semibold text-textDim">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                      checked={allPageTrajectenSelected}
+                      ref={(element) => {
+                        if (element) {
+                          element.indeterminate =
+                            selectedOnPageCount > 0 && !allPageTrajectenSelected;
+                        }
+                      }}
+                      onChange={selectPageTrajecten}
+                      aria-label="Selecteer trajecten op deze pagina"
+                    />
+                  </th>
                   <th className="px-3 py-3 text-left font-semibold text-textDim">Traject</th>
                   <th className="px-3 py-3 text-left font-semibold text-textDim">
                     Uitvoerder onderhoud
@@ -603,6 +871,9 @@ export function JaarplanPage() {
               <tbody>
                 {paginatedRows.map((group) => {
                   const isCollapsed = collapsed[group.traject.globalId] ?? true;
+                  const isBulkSelected = bulkSelectedTrajectIds.includes(
+                    group.traject.globalId
+                  );
                   const trajectDraft =
                     trajectDrafts[group.traject.globalId] ??
                     toTrajectDetailsDraft(group.traject);
@@ -612,6 +883,11 @@ export function JaarplanPage() {
                     trajectDraft.bodemklasse !== group.traject.bodemklasse ||
                     trajectDraft.uitvoerderOnderhoud !==
                       group.traject.uitvoerderOnderhoud ||
+                    trajectDraft.type !== group.traject.type ||
+                    trajectDraft.bovenbreedte !== group.traject.bovenbreedte ||
+                    trajectDraft.werkpadBreedte !== group.traject.werkpadBreedte ||
+                    trajectDraft.stakeholderInformatie !==
+                      group.traject.stakeholderInformatie ||
                     (trajectDraft.conceptGereedValue === "1") !==
                       group.traject.conceptGereed;
 
@@ -619,9 +895,25 @@ export function JaarplanPage() {
                     <Fragment key={group.traject.globalId}>
                       <tr
                         className={`border-b border-border/80 transition-colors ${
-                          selectedTrajectId === group.traject.globalId ? "bg-accentSoft/40" : "hover:bg-surfaceAlt/60"
+                          isBulkSelected
+                            ? "bg-accentSoft/50"
+                            : selectedTrajectId === group.traject.globalId
+                              ? "bg-accentSoft/40"
+                              : "hover:bg-surfaceAlt/60"
                         }`}
                       >
+                        <td className="px-3 py-3 align-top">
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                            checked={isBulkSelected}
+                            onChange={() => {
+                              toggleBulkSelectedTraject(group.traject.globalId);
+                              setBulkError(null);
+                            }}
+                            aria-label={`Selecteer traject ${group.traject.trajectCode}`}
+                          />
+                        </td>
                         <td className="px-3 py-3">
                           <button
                             type="button"
@@ -711,7 +1003,7 @@ export function JaarplanPage() {
 
                       {!isCollapsed ? (
                         <tr className="border-b border-border/60 bg-surfaceAlt/40">
-                          <td colSpan={6} className="px-3 py-4">
+                          <td colSpan={7} className="px-3 py-4">
                             <div className="space-y-4">
                               <section className="rounded-card border border-border bg-white p-4 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.45)]">
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -859,6 +1151,131 @@ export function JaarplanPage() {
                                         }
                                       />
                                     )}
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">Type</span>
+                                    {metadata.trajectFieldOptions.type.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.type}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "type",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.type.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.type}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "type",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">Bovenbreedte</span>
+                                    {metadata.trajectFieldOptions.bovenbreedte.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.bovenbreedte}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "bovenbreedte",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.bovenbreedte.map(
+                                          (option) => (
+                                            <option key={option.value} value={option.value}>
+                                              {option.label}
+                                            </option>
+                                          )
+                                        )}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.bovenbreedte}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "bovenbreedte",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+
+                                  <label className="space-y-1.5">
+                                    <span className="text-[11px] text-textDim">
+                                      Werkpad breedte
+                                    </span>
+                                    {metadata.trajectFieldOptions.werkpadBreedte.length ? (
+                                      <NativeSelect
+                                        value={trajectDraft.werkpadBreedte}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "werkpadBreedte",
+                                            event.target.value
+                                          )
+                                        }
+                                      >
+                                        <option value="">—</option>
+                                        {metadata.trajectFieldOptions.werkpadBreedte.map(
+                                          (option) => (
+                                            <option key={option.value} value={option.value}>
+                                              {option.label}
+                                            </option>
+                                          )
+                                        )}
+                                      </NativeSelect>
+                                    ) : (
+                                      <Input
+                                        value={trajectDraft.werkpadBreedte}
+                                        onChange={(event) =>
+                                          updateTrajectDraft(
+                                            group.traject,
+                                            "werkpadBreedte",
+                                            event.target.value
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </label>
+
+                                  <label className="space-y-1.5 md:col-span-2 xl:col-span-4">
+                                    <span className="text-[11px] text-textDim">
+                                      Stakeholder informatie
+                                    </span>
+                                    <Textarea
+                                      rows={3}
+                                      value={trajectDraft.stakeholderInformatie}
+                                      onChange={(event) =>
+                                        updateTrajectDraft(
+                                          group.traject,
+                                          "stakeholderInformatie",
+                                          event.target.value
+                                        )
+                                      }
+                                    />
                                   </label>
                                 </div>
 

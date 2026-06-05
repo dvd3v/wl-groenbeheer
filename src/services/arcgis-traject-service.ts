@@ -90,6 +90,9 @@ export interface HeadlessMapContext {
     functie: JaarplanDomainOption[];
     uitvoerderOnderhoud: JaarplanDomainOption[];
     bodemklasse: JaarplanDomainOption[];
+    type: JaarplanDomainOption[];
+    bovenbreedte: JaarplanDomainOption[];
+    werkpadBreedte: JaarplanDomainOption[];
   };
 }
 
@@ -145,6 +148,33 @@ function toCodedValueOptions(domain: unknown): JaarplanDomainOption[] {
 
 function getFieldOptions(layer: FeatureLayer, fieldName: string): JaarplanDomainOption[] {
   return toCodedValueOptions(layer.fields.find((field) => field.name === fieldName)?.domain);
+}
+
+function toEditableFieldValue(
+  layer: FeatureLayer,
+  fieldName: string,
+  value: string
+): string | number | null {
+  const field = layer.fields.find((candidate) => candidate.name === fieldName);
+  if (!field) {
+    return value || null;
+  }
+
+  if (!value.trim()) {
+    return null;
+  }
+
+  if (
+    field.type === "small-integer" ||
+    field.type === "integer" ||
+    field.type === "single" ||
+    field.type === "double"
+  ) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  return value;
 }
 
 function createPdokBasemap(layerName: string, title: string): Basemap {
@@ -322,6 +352,10 @@ function toSpatialFeature(graphic: Graphic): SpatialTrajectFeature {
     functie: String(graphic.attributes.functie ?? ""),
     uitvoerderOnderhoud: String(graphic.attributes.uitvoerder_onderhoud ?? ""),
     bodemklasse: String(graphic.attributes.bodemklasse ?? ""),
+    type: String(graphic.attributes.type ?? ""),
+    bovenbreedte: String(graphic.attributes.bovenbreedte ?? ""),
+    werkpadBreedte: String(graphic.attributes.werkpad_breedte ?? ""),
+    stakeholderInformatie: String(graphic.attributes.stakeholder_informatie ?? ""),
     typeCodering: String(graphic.attributes.type_codering ?? ""),
     objectCount:
       typeof graphic.attributes.object_count === "number"
@@ -633,6 +667,9 @@ export class ArcgisTrajectService {
         functie: getFieldOptions(trajectLayer, "functie"),
         uitvoerderOnderhoud: getFieldOptions(trajectLayer, "uitvoerder_onderhoud"),
         bodemklasse: getFieldOptions(trajectLayer, "bodemklasse"),
+        type: getFieldOptions(trajectLayer, "type"),
+        bovenbreedte: getFieldOptions(trajectLayer, "bovenbreedte"),
+        werkpadBreedte: getFieldOptions(trajectLayer, "werkpad_breedte"),
       },
     };
   }
@@ -684,6 +721,14 @@ export class ArcgisTrajectService {
         functie: values.functie || null,
         uitvoerder_onderhoud: values.uitvoerderOnderhoud || null,
         bodemklasse: values.bodemklasse || null,
+        type: toEditableFieldValue(layer, "type", values.type),
+        bovenbreedte: toEditableFieldValue(layer, "bovenbreedte", values.bovenbreedte),
+        werkpad_breedte: toEditableFieldValue(
+          layer,
+          "werkpad_breedte",
+          values.werkpadBreedte
+        ),
+        stakeholder_informatie: values.stakeholderInformatie || null,
         type_codering: layer.types?.[0]?.id ?? FALLBACK_MODEL_TYPES[0].value,
         status: normalizedStatus,
         opmerking: values.opmerking,
@@ -740,6 +785,14 @@ export class ArcgisTrajectService {
         functie: values.functie || null,
         uitvoerder_onderhoud: values.uitvoerderOnderhoud || null,
         bodemklasse: values.bodemklasse || null,
+        type: toEditableFieldValue(layer, "type", values.type),
+        bovenbreedte: toEditableFieldValue(layer, "bovenbreedte", values.bovenbreedte),
+        werkpad_breedte: toEditableFieldValue(
+          layer,
+          "werkpad_breedte",
+          values.werkpadBreedte
+        ),
+        stakeholder_informatie: values.stakeholderInformatie || null,
         status: normalizedStatus,
         opmerking: values.opmerking,
       },

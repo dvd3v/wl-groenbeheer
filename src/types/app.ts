@@ -52,6 +52,10 @@ export interface SpatialTrajectFeature {
   functie: string;
   uitvoerderOnderhoud: string;
   bodemklasse: string;
+  type: string;
+  bovenbreedte: string;
+  werkpadBreedte: string;
+  stakeholderInformatie: string;
   typeCodering: string;
   objectCount: number | null;
   bronlagen: string;
@@ -202,6 +206,24 @@ export interface AttributeFormValues {
   functie: string;
   uitvoerderOnderhoud: string;
   bodemklasse: string;
+  type: string;
+  bovenbreedte: string;
+  werkpadBreedte: string;
+  stakeholderInformatie: string;
+}
+
+export interface BulkTrajectUpdateFields {
+  status?: number;
+  opmerking?: string;
+  naam?: string;
+  aanpassenDoor?: string;
+  functie?: string;
+  uitvoerderOnderhoud?: string;
+  bodemklasse?: string;
+  type?: string;
+  bovenbreedte?: string;
+  werkpadBreedte?: string;
+  conceptGereedValue?: string;
 }
 
 export interface JaarplanTrajectRecord {
@@ -213,6 +235,10 @@ export interface JaarplanTrajectRecord {
   functie: string;
   bodemklasse: string;
   uitvoerderOnderhoud: string;
+  type: string;
+  bovenbreedte: string;
+  werkpadBreedte: string;
+  stakeholderInformatie: string;
   status: number | null;
   conceptGereed: boolean;
   conceptGereedValue: string;
@@ -257,12 +283,17 @@ export interface JaarplanMetadata {
   uitvoerderOptions: JaarplanDomainOption[];
   uitvoeringswijzeMaaienOptions: JaarplanDomainOption[];
   steekproefStatusOptions: JaarplanDomainOption[];
+  redenAfgekeurdOptions: JaarplanDomainOption[];
   statusMaatregelOptions: JaarplanDomainOption[];
   redenNietUitgevoerdOptions: JaarplanDomainOption[];
   trajectFieldOptions: {
+    aanpassenDoor?: JaarplanDomainOption[];
     functie: JaarplanDomainOption[];
     bodemklasse: JaarplanDomainOption[];
     uitvoerderOnderhoud: JaarplanDomainOption[];
+    type: JaarplanDomainOption[];
+    bovenbreedte: JaarplanDomainOption[];
+    werkpadBreedte: JaarplanDomainOption[];
   };
 }
 
@@ -276,6 +307,8 @@ export interface JaarplanLocalFields {
   datumUitgevoerd: string;
   datumMaaiselGeruimd: string;
   steekproefStatus: SteekproefStatus;
+  redenAfgekeurd: string;
+  datumSteekproef: string;
   redenNietUitgevoerd: string;
   foto: string;
   opmerking: string;

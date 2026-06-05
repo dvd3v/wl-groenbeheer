@@ -133,6 +133,15 @@ export function MeasureSignals({ measure }: { measure: JaarplanMeasureRecord }) 
           Locatiebezoek
         </span>
       ) : null}
+      {measure.steekproefStatus.toLowerCase() === "afgekeurd" ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-pill border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700"
+          title={measure.redenAfgekeurd || "Steekproef afgekeurd"}
+        >
+          <TriangleAlert className="h-3.5 w-3.5" />
+          Afgekeurd
+        </span>
+      ) : null}
     </div>
   );
 }
