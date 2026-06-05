@@ -12,7 +12,10 @@ import { BasemapSwitcher } from "../components/map/basemap-switcher";
 import { MapSidebar } from "../components/map/map-sidebar";
 import { MapToolbar } from "../components/map/map-toolbar";
 import { TrajectReviewPanel } from "../components/map/traject-review-panel";
+import { BulkMeasurePlanningPanel } from "../components/traject/bulk-measure-planning-panel";
+import { BulkTrajectEditPanel } from "../components/traject/bulk-traject-edit-panel";
 import { Button } from "../components/ui/button";
+import { arcgisJaarplanService } from "../services/arcgis-jaarplan-service";
 import {
   arcgisTrajectService,
   type HeadlessMapContext,
@@ -26,6 +29,8 @@ import {
 import { useAppStore } from "../store/app-store";
 import type {
   AttributeFormValues,
+  BulkTrajectUpdateFields,
+  JaarplanMeasureFormValues,
   LayerToggleItem,
   LegendItem,
   PendingGeometryEdits,
@@ -196,6 +201,10 @@ function toFormValues(traject: TrajectRecord | null, statusFallback: number): At
     functie: traject?.functie ?? "",
     uitvoerderOnderhoud: traject?.uitvoerderOnderhoud ?? "",
     bodemklasse: traject?.bodemklasse ?? "",
+    type: traject?.type ?? "",
+    bovenbreedte: traject?.bovenbreedte ?? "",
+    werkpadBreedte: traject?.werkpadBreedte ?? "",
+    stakeholderInformatie: traject?.stakeholderInformatie ?? "",
   };
 }
 
@@ -296,13 +305,19 @@ export function MapTrajectControlePage() {
   const reviewHistoryIndexRef = useRef(-1);
   const borPopupDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const selectedGlobalIdRef = useRef<string | null>(null);
+  const bulkSelectionModeRef = useRef(false);
   const pendingGeometryEditsRef = useRef<PendingGeometryEdits | null>(null);
   const hasUnsavedChangesRef = useRef(false);
   const reviewHighlightHandleRef = useRef<{ remove: () => void } | null>(null);
+  const bulkHighlightHandleRef = useRef<{ remove: () => void } | null>(null);
   const exactGeometryCacheRef = useRef<Map<string, GeometryWithoutMeshUnion>>(new Map());
   const reviewSummaryCacheRef = useRef<Map<string, TrajectReviewSummary>>(new Map());
   const trajecten = useAppStore((state) => state.trajecten);
   const selectedGlobalId = useAppStore((state) => state.selectedGlobalId);
+  const bulkSelectionMode = useAppStore((state) => state.bulkSelectionMode);
+  const bulkSelectedTrajectIds = useAppStore((state) => state.bulkSelectedTrajectIds);
+  const jaarplanTrajecten = useAppStore((state) => state.jaarplanTrajecten);
+  const jaarplanMetadata = useAppStore((state) => state.jaarplanMetadata);
   const selectedTraject = useAppStore((state) =>
     state.trajecten.find((traject) => traject.globalId === state.selectedGlobalId) ?? null
   );
@@ -317,7 +332,11 @@ export function MapTrajectControlePage() {
   const setMapViewState = useAppStore((state) => state.setMapViewState);
   const setLayerVisibility = useAppStore((state) => state.setLayerVisibility);
   const upsertTraject = useAppStore((state) => state.upsertTraject);
+  const upsertJaarplanMeasure = useAppStore((state) => state.upsertJaarplanMeasure);
   const removeTraject = useAppStore((state) => state.removeTraject);
+  const setBulkSelectionMode = useAppStore((state) => state.setBulkSelectionMode);
+  const toggleBulkSelectedTraject = useAppStore((state) => state.toggleBulkSelectedTraject);
+  const clearBulkSelectedTrajects = useAppStore((state) => state.clearBulkSelectedTrajects);
   const [mapContext, setMapContext] = useState<HeadlessMapContext | null>(null);
   const [layerItems, setLayerItems] = useState<LayerToggleItem[]>([]);
   const [legendItems, setLegendItems] = useState<LegendItem[]>([]);
@@ -331,6 +350,13 @@ export function MapTrajectControlePage() {
   const [borPopupExpanded, setBorPopupExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkMeasureSaving, setBulkMeasureSaving] = useState(false);
+  const [bulkMeasureError, setBulkMeasureError] = useState<string | null>(null);
+  const [bulkMeasureDraft, setBulkMeasureDraft] =
+    useState<JaarplanMeasureFormValues | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -381,6 +407,22 @@ export function MapTrajectControlePage() {
   const trajectByGlobalId = useMemo(
     () => new Map(trajecten.map((traject) => [traject.globalId, traject])),
     [trajecten]
+  );
+  const bulkSelectedTrajecten = useMemo(
+    () =>
+      bulkSelectedTrajectIds
+        .map((globalId) => trajectByGlobalId.get(globalId))
+        .filter((traject): traject is TrajectRecord => Boolean(traject)),
+    [bulkSelectedTrajectIds, trajectByGlobalId]
+  );
+  const bulkSelectedJaarplanTrajecten = useMemo(
+    () =>
+      bulkSelectedTrajectIds
+        .map((globalId) =>
+          jaarplanTrajecten.find((traject) => traject.globalId === globalId)
+        )
+        .filter((traject): traject is (typeof jaarplanTrajecten)[number] => Boolean(traject)),
+    [bulkSelectedTrajectIds, jaarplanTrajecten]
   );
 
   const statusOptions = useMemo<StatusOption[]>(
@@ -485,7 +527,11 @@ export function MapTrajectControlePage() {
       draftValues.aanpassenDoor !== selectedTraject.aanpassenDoor ||
       draftValues.functie !== selectedTraject.functie ||
       draftValues.uitvoerderOnderhoud !== selectedTraject.uitvoerderOnderhoud ||
-      draftValues.bodemklasse !== selectedTraject.bodemklasse
+      draftValues.bodemklasse !== selectedTraject.bodemklasse ||
+      draftValues.type !== selectedTraject.type ||
+      draftValues.bovenbreedte !== selectedTraject.bovenbreedte ||
+      draftValues.werkpadBreedte !== selectedTraject.werkpadBreedte ||
+      draftValues.stakeholderInformatie !== selectedTraject.stakeholderInformatie
     );
   }, [draftValues, pendingGeometryEdits, selectedTraject]);
 
@@ -620,12 +666,32 @@ export function MapTrajectControlePage() {
   }, [selectedGlobalId]);
 
   useEffect(() => {
+    bulkSelectionModeRef.current = bulkSelectionMode;
+  }, [bulkSelectionMode]);
+
+  useEffect(() => {
     pendingGeometryEditsRef.current = pendingGeometryEdits;
   }, [pendingGeometryEdits]);
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!jaarplanMetadata || !bulkSelectedJaarplanTrajecten.length) {
+      setBulkMeasureDraft(null);
+      return;
+    }
+
+    setBulkMeasureDraft(
+      (current) =>
+        current ??
+        arcgisJaarplanService.createDefaultFormValues(
+          jaarplanMetadata,
+          bulkSelectedJaarplanTrajecten[0]
+        )
+    );
+  }, [bulkSelectedJaarplanTrajecten, jaarplanMetadata]);
 
   useEffect(() => {
     const fallback = statusOptions[0]?.value ?? 1;
@@ -653,8 +719,12 @@ export function MapTrajectControlePage() {
     selectedTraject?.functie,
     selectedTraject?.naam,
     selectedTraject?.status,
+    selectedTraject?.type,
     selectedTraject?.trajectCode,
     selectedTraject?.uitvoerderOnderhoud,
+    selectedTraject?.bovenbreedte,
+    selectedTraject?.werkpadBreedte,
+    selectedTraject?.stakeholderInformatie,
     statusOptions,
   ]);
 
@@ -785,6 +855,7 @@ export function MapTrajectControlePage() {
 
         const mapClickHandle = createdContext.view.on("click", async (event) => {
           const activeSelectedGlobalId = selectedGlobalIdRef.current;
+          const activeBulkSelectionMode = bulkSelectionModeRef.current;
           const activePendingGeometryEdits = pendingGeometryEditsRef.current;
           const canDiscardCurrentSelection = () =>
             !hasUnsavedChangesRef.current ||
@@ -831,6 +902,13 @@ export function MapTrajectControlePage() {
                 left.trajectCode.localeCompare(right.trajectCode, "nl")
             );
 
+          if (activeBulkSelectionMode && trajectHits.length) {
+            setBorPopup(null);
+            setSelectionChoices(null);
+            toggleBulkSelectedTraject(trajectHits[0].globalId);
+            return;
+          }
+
           if (trajectHits.length > 1) {
             setBorPopup(null);
             setSelectionChoices(
@@ -846,6 +924,12 @@ export function MapTrajectControlePage() {
           if (trajectHits.length === 1) {
             setBorPopup(null);
             handleSelectTraject(trajectHits[0].globalId, "map");
+            return;
+          }
+
+          if (activeBulkSelectionMode) {
+            setBorPopup(null);
+            setSelectionChoices(null);
             return;
           }
 
@@ -955,6 +1039,7 @@ export function MapTrajectControlePage() {
     setMapViewState,
     setPendingGeometryEdits,
     setZoomTargetGlobalId,
+    toggleBulkSelectedTraject,
   ]);
 
   useEffect(() => {
@@ -992,6 +1077,46 @@ export function MapTrajectControlePage() {
       active = false;
     };
   }, [mapContext, rendererMode]);
+
+  useEffect(() => {
+    if (!mapContext) {
+      return;
+    }
+
+    const currentContext = mapContext;
+    let active = true;
+
+    async function syncBulkHighlight() {
+      bulkHighlightHandleRef.current?.remove();
+      bulkHighlightHandleRef.current = null;
+
+      const objectIds = bulkSelectedTrajecten
+        .map((traject) => traject.objectId)
+        .filter((objectId) => Number.isFinite(objectId));
+
+      if (!objectIds.length) {
+        return;
+      }
+
+      const trajectLayerView = (await currentContext.view.whenLayerView(
+        currentContext.trajectLayer
+      )) as FeatureLayerView;
+
+      if (!active) {
+        return;
+      }
+
+      bulkHighlightHandleRef.current = trajectLayerView.highlight(objectIds);
+    }
+
+    void syncBulkHighlight();
+
+    return () => {
+      active = false;
+      bulkHighlightHandleRef.current?.remove();
+      bulkHighlightHandleRef.current = null;
+    };
+  }, [bulkSelectedTrajecten, mapContext]);
 
   useEffect(() => {
     if (!mapContext) {
@@ -1248,6 +1373,119 @@ export function MapTrajectControlePage() {
     }
   }
 
+  async function handleBulkSave(values: BulkTrajectUpdateFields) {
+    if (!mapContext || !bulkSelectedTrajecten.length) {
+      return;
+    }
+
+    if (!trajectLayerEditingEnabled) {
+      setBulkError(TRAJECT_LAYER_EDITING_DISABLED_MESSAGE);
+      return;
+    }
+
+    setBulkSaving(true);
+    setBulkError(null);
+
+    try {
+      exactGeometryCacheRef.current.clear();
+      reviewSummaryCacheRef.current.clear();
+
+      for (const traject of bulkSelectedTrajecten) {
+        const nextValues: AttributeFormValues = {
+          ...toFormValues(traject, statusOptions[0]?.value ?? 1),
+          ...values,
+          status: values.status ?? traject.status,
+        };
+        const updated = await arcgisTrajectService.updateTraject(
+          mapContext.trajectLayer,
+          traject,
+          nextValues
+        );
+        upsertTraject(updated);
+      }
+    } catch (saveError) {
+      setBulkError(
+        saveError instanceof Error ? saveError.message : "Bulk opslaan is mislukt."
+      );
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  function updateBulkMeasureDraft(
+    field: keyof JaarplanMeasureFormValues,
+    value: string
+  ) {
+    if (!jaarplanMetadata || !bulkSelectedJaarplanTrajecten.length) {
+      return;
+    }
+
+    setBulkMeasureDraft((current) => {
+      const existing =
+        current ??
+        arcgisJaarplanService.createDefaultFormValues(
+          jaarplanMetadata,
+          bulkSelectedJaarplanTrajecten[0]
+        );
+      const next = {
+        ...existing,
+        [field]: value,
+      } as JaarplanMeasureFormValues;
+
+      if (field === "regimeValue" || field === "werkzaamhedenValue") {
+        return arcgisJaarplanService.syncSubtypeValues(
+          jaarplanMetadata,
+          next,
+          field === "regimeValue" ? "regimeValue" : "werkzaamhedenValue"
+        );
+      }
+
+      return next;
+    });
+  }
+
+  async function handleBulkCreateMeasures() {
+    if (!jaarplanMetadata || !bulkMeasureDraft || !bulkSelectedJaarplanTrajecten.length) {
+      return;
+    }
+
+    if (!jaarplanMetadata.editable) {
+      setBulkMeasureError("Bewerken is niet ingeschakeld voor de maatregelentabel.");
+      return;
+    }
+
+    if (bulkSelectedJaarplanTrajecten.length !== bulkSelectedTrajecten.length) {
+      setBulkMeasureError(
+        "Niet alle geselecteerde trajecten zijn al beschikbaar in het jaarplan."
+      );
+      return;
+    }
+
+    setBulkMeasureSaving(true);
+    setBulkMeasureError(null);
+
+    try {
+      for (const traject of bulkSelectedJaarplanTrajecten) {
+        const created = await arcgisJaarplanService.createMeasure(
+          {
+            ...bulkMeasureDraft,
+            trajectGuid: traject.globalId,
+            trajectGlobalId: traject.globalId,
+          },
+          jaarplanMetadata,
+          jaarplanTrajecten
+        );
+        upsertJaarplanMeasure(created);
+      }
+    } catch (error) {
+      setBulkMeasureError(
+        error instanceof Error ? error.message : "Bulk plannen is mislukt."
+      );
+    } finally {
+      setBulkMeasureSaving(false);
+    }
+  }
+
   async function handleDeleteTraject() {
     if (!mapContext || !selectedTraject) {
       return;
@@ -1328,6 +1566,20 @@ export function MapTrajectControlePage() {
     mapContext.sketchViewModel.create("polygon");
   }
 
+  function toggleBulkSelectionMode() {
+    if (!bulkSelectionMode && !canDiscardUnsavedChanges()) {
+      return;
+    }
+
+    setBulkSelectionMode(!bulkSelectionMode);
+    setBulkError(null);
+
+    if (!bulkSelectionMode) {
+      resetReviewState({ clearBorPopup: true });
+      setSidebarCollapsed(true);
+    }
+  }
+
   function toggleLayer(id: string, visible: boolean) {
     if (!mapContext) {
       return;
@@ -1343,7 +1595,8 @@ export function MapTrajectControlePage() {
     }
   }
 
-  const reviewPanelOpen = Boolean(selectedTraject || pendingGeometryEdits);
+  const reviewPanelOpen =
+    bulkSelectedTrajecten.length === 0 && Boolean(selectedTraject || pendingGeometryEdits);
 
   return (
     <div className="flex h-full min-h-0">
@@ -1359,6 +1612,7 @@ export function MapTrajectControlePage() {
         selectedStatuses={mapFilters.statuses}
         selectedBronlagen={mapFilters.bronlagen}
         onlyNewGeometry={mapFilters.onlyNewGeometry}
+        collapsed={sidebarCollapsed}
         onToggleLayer={toggleLayer}
         onObjectCountMaxChange={(value) =>
           setMapFilters((current) => ({
@@ -1393,6 +1647,7 @@ export function MapTrajectControlePage() {
           }))
         }
         onClearFilters={() => setMapFilters(DEFAULT_MAP_FILTERS)}
+        onCollapsedChange={setSidebarCollapsed}
       />
 
       <section className="relative min-h-0 flex-1">
@@ -1422,13 +1677,16 @@ export function MapTrajectControlePage() {
                   ? TRAJECT_LAYER_EDITING_DISABLED_MESSAGE
                   : !selectedTraject
                     ? "Selecteer eerst een traject om de vorm aan te passen."
-                    : undefined
+                  : undefined
               }
+              bulkSelectionMode={bulkSelectionMode}
+              bulkSelectedCount={bulkSelectedTrajecten.length}
               rendererMode={rendererMode}
               onAddTraject={startCreate}
               onEditShape={() => {
                 void startReshape();
               }}
+              onToggleBulkSelection={toggleBulkSelectionMode}
               onRendererModeChange={setRendererMode}
             />
 
@@ -1460,7 +1718,15 @@ export function MapTrajectControlePage() {
                   key={choice.globalId}
                   type="button"
                   className="w-full rounded-card border border-border bg-surfaceAlt/80 px-3 py-2 text-left transition hover:border-accent/40 hover:bg-accentSoft/25"
-                  onClick={() => handleSelectTraject(choice.globalId, "map")}
+                  onClick={() => {
+                    if (bulkSelectionMode) {
+                      toggleBulkSelectedTraject(choice.globalId);
+                      setSelectionChoices(null);
+                      return;
+                    }
+
+                    handleSelectTraject(choice.globalId, "map");
+                  }}
                 >
                   <div className="text-[12px] font-medium text-text">{choice.trajectCode}</div>
                   <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-textMuted">
@@ -1477,6 +1743,75 @@ export function MapTrajectControlePage() {
           </div>
         ) : null}
 
+        {bulkSelectedTrajecten.length ? (
+          <div className="absolute bottom-3 right-3 top-16 z-20 w-[calc(100vw-24px)] max-w-[430px]">
+            <div className="app-scrollbar flex h-full flex-col gap-3 overflow-y-auto pr-1">
+              <BulkTrajectEditPanel
+                title="Trajectgegevens bulk bewerken"
+                selectedCount={bulkSelectedTrajecten.length}
+                saving={bulkSaving}
+                fieldOptions={
+                  mapContext?.trajectFieldOptions ?? {
+                    functie: [],
+                    uitvoerderOnderhoud: [],
+                    bodemklasse: [],
+                    type: [],
+                    bovenbreedte: [],
+                    werkpadBreedte: [],
+                  }
+                }
+                disabled={!trajectLayerEditingEnabled}
+                disabledMessage={
+                  !trajectLayerEditingEnabled ? TRAJECT_LAYER_EDITING_DISABLED_MESSAGE : undefined
+                }
+                error={bulkError}
+                density="compact"
+                onSave={(values) => {
+                  void handleBulkSave(values);
+                }}
+                onClearSelection={clearBulkSelectedTrajects}
+              />
+
+              {jaarplanMetadata && bulkMeasureDraft ? (
+                <BulkMeasurePlanningPanel
+                  selectedCount={bulkSelectedTrajecten.length}
+                  values={bulkMeasureDraft}
+                  metadata={jaarplanMetadata}
+                  steekproefStatusOptions={jaarplanMetadata.steekproefStatusOptions}
+                  toelichtingText={arcgisJaarplanService.getMeasureToelichtingLabel(
+                    jaarplanMetadata,
+                    bulkMeasureDraft.regimeValue,
+                    bulkMeasureDraft.toelichtingValue
+                  )}
+                  saving={bulkMeasureSaving}
+                  error={bulkMeasureError}
+                  disabled={
+                    !jaarplanMetadata.editable ||
+                    bulkSelectedJaarplanTrajecten.length !== bulkSelectedTrajecten.length
+                  }
+                  disabledMessage={
+                    !jaarplanMetadata.editable
+                      ? "Bewerken is niet ingeschakeld voor de maatregelentabel."
+                      : bulkSelectedJaarplanTrajecten.length !== bulkSelectedTrajecten.length
+                        ? "Niet alle geselecteerde trajecten zijn al beschikbaar in het jaarplan."
+                        : undefined
+                  }
+                  layout="compact"
+                  onFieldChange={updateBulkMeasureDraft}
+                  onSubmit={() => {
+                    void handleBulkCreateMeasures();
+                  }}
+                  onClearSelection={clearBulkSelectedTrajects}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : bulkSelectionMode ? (
+          <div className="glass-panel absolute right-3 top-16 z-20 rounded-card px-4 py-3 text-[12px] text-textDim">
+            Bulkselectie actief · 0 trajecten geselecteerd
+          </div>
+        ) : null}
+
         {reviewPanelOpen ? (
           <TrajectReviewPanel
             open={reviewPanelOpen}
@@ -1490,6 +1825,9 @@ export function MapTrajectControlePage() {
                 functie: [],
                 uitvoerderOnderhoud: [],
                 bodemklasse: [],
+                type: [],
+                bovenbreedte: [],
+                werkpadBreedte: [],
               }
             }
             review={reviewSummary}

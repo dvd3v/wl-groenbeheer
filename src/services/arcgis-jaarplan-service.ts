@@ -57,6 +57,8 @@ const DEFAULT_MEASURE_FORM_FIELDS = {
   datumUitgevoerd: "",
   datumMaaiselGeruimd: "",
   steekproefStatus: "Niet_beoordeeld",
+  redenAfgekeurd: "",
+  datumSteekproef: "",
   redenNietUitgevoerd: "",
   foto: "",
   opmerking: "",
@@ -89,6 +91,10 @@ const FIELD_NAMES = {
   naam: "naam",
   functie: "functie",
   bodemklasse: "bodemklasse",
+  type: "type",
+  bovenbreedte: "bovenbreedte",
+  werkpadBreedte: "werkpad_breedte",
+  stakeholderInformatie: "stakeholder_informatie",
   status: "status",
   conceptGereed: "concept_gereed",
   regime: "wl_regime",
@@ -105,6 +111,8 @@ const FIELD_NAMES = {
   uitvoeringswijzeMaaien: "wl_uitvoeringswijze_maaien",
   steekproefStatus: "wl_steekproef_status",
   steekproefOpmerking: "wl_steekproef_opmerking",
+  redenAfgekeurd: "wl_reden_afgekeurd",
+  datumSteekproef: "wl_datum_steekproef",
   statusMaatregel: "anm_status_maatregel",
   periodeGepland: "anm_periode_gepland",
   datumUitgevoerd: "anm_datum_uitgevoerd",
@@ -136,6 +144,10 @@ const TRAJECT_OUT_FIELDS = [
   FIELD_NAMES.naam,
   FIELD_NAMES.functie,
   FIELD_NAMES.bodemklasse,
+  FIELD_NAMES.type,
+  FIELD_NAMES.bovenbreedte,
+  FIELD_NAMES.werkpadBreedte,
+  FIELD_NAMES.stakeholderInformatie,
   FIELD_NAMES.uitvoerderOnderhoud,
   FIELD_NAMES.status,
   FIELD_NAMES.conceptGereed,
@@ -158,6 +170,8 @@ const MAATREGEL_OUT_FIELDS = [
   FIELD_NAMES.uitvoeringswijzeMaaien,
   FIELD_NAMES.steekproefStatus,
   FIELD_NAMES.steekproefOpmerking,
+  FIELD_NAMES.redenAfgekeurd,
+  FIELD_NAMES.datumSteekproef,
   FIELD_NAMES.statusMaatregel,
   FIELD_NAMES.periodeGepland,
   FIELD_NAMES.datumUitgevoerd,
@@ -582,6 +596,12 @@ function toJaarplanTraject(graphic: Graphic): JaarplanTrajectRecord {
     functie: String(graphic.attributes[FIELD_NAMES.functie] ?? ""),
     bodemklasse: String(graphic.attributes[FIELD_NAMES.bodemklasse] ?? ""),
     uitvoerderOnderhoud: String(graphic.attributes[FIELD_NAMES.uitvoerderOnderhoud] ?? ""),
+    type: String(graphic.attributes[FIELD_NAMES.type] ?? ""),
+    bovenbreedte: String(graphic.attributes[FIELD_NAMES.bovenbreedte] ?? ""),
+    werkpadBreedte: String(graphic.attributes[FIELD_NAMES.werkpadBreedte] ?? ""),
+    stakeholderInformatie: String(
+      graphic.attributes[FIELD_NAMES.stakeholderInformatie] ?? ""
+    ),
     status: Number.isFinite(Number(graphic.attributes[FIELD_NAMES.status]))
       ? Number(graphic.attributes[FIELD_NAMES.status])
       : null,
@@ -769,6 +789,8 @@ function toJaarplanMeasure(
       String(attributes[FIELD_NAMES.uitvoeringswijzeMaaien] ?? "")
     ),
     steekproefOpmerking: String(attributes[FIELD_NAMES.steekproefOpmerking] ?? ""),
+    redenAfgekeurd: String(attributes[FIELD_NAMES.redenAfgekeurd] ?? ""),
+    datumSteekproef: toDateInputValue(attributes[FIELD_NAMES.datumSteekproef]),
     statusMaatregel,
     datumGepland: String(attributes[FIELD_NAMES.periodeGepland] ?? ""),
     datumUitgevoerd: toDateInputValue(attributes[FIELD_NAMES.datumUitgevoerd]),
@@ -916,6 +938,15 @@ export class ArcgisJaarplanService {
     );
     const functieOptions = getFieldDomainOptions(resolvedLayer, FIELD_NAMES.functie);
     const bodemklasseOptions = getFieldDomainOptions(resolvedLayer, FIELD_NAMES.bodemklasse);
+    const typeOptions = getFieldDomainOptions(resolvedLayer, FIELD_NAMES.type);
+    const bovenbreedteOptions = getFieldDomainOptions(
+      resolvedLayer,
+      FIELD_NAMES.bovenbreedte
+    );
+    const werkpadBreedteOptions = getFieldDomainOptions(
+      resolvedLayer,
+      FIELD_NAMES.werkpadBreedte
+    );
 
     return {
       editable:
@@ -950,6 +981,10 @@ export class ArcgisJaarplanService {
               label: option.label,
               rawValue: option.value,
             })),
+      redenAfgekeurdOptions: getFieldDomainOptions(
+        resolvedTable,
+        FIELD_NAMES.redenAfgekeurd
+      ),
       statusMaatregelOptions:
         getFieldDomainOptions(resolvedTable, FIELD_NAMES.statusMaatregel).length > 0
           ? getFieldDomainOptions(resolvedTable, FIELD_NAMES.statusMaatregel)
@@ -969,6 +1004,9 @@ export class ArcgisJaarplanService {
         uitvoerderOnderhoud: uitvoerderDomainOptions.length
           ? uitvoerderDomainOptions
           : uitvoerderOptions,
+        type: typeOptions,
+        bovenbreedte: bovenbreedteOptions,
+        werkpadBreedte: werkpadBreedteOptions,
       },
     };
   }
@@ -1284,6 +1322,11 @@ export class ArcgisJaarplanService {
         values.steekproefStatus
       ),
       [FIELD_NAMES.steekproefOpmerking]: values.steekproefOpmerking || null,
+      [FIELD_NAMES.redenAfgekeurd]: toFieldValue(
+        getField(table, FIELD_NAMES.redenAfgekeurd),
+        values.redenAfgekeurd
+      ),
+      [FIELD_NAMES.datumSteekproef]: toArcgisDateValue(values.datumSteekproef),
       [FIELD_NAMES.statusMaatregel]: toFieldValue(
         getField(table, FIELD_NAMES.statusMaatregel),
         values.statusMaatregel
@@ -1332,7 +1375,15 @@ export class ArcgisJaarplanService {
     globalId: string,
     values: Pick<
       JaarplanTrajectRecord,
-      "naam" | "functie" | "bodemklasse" | "uitvoerderOnderhoud" | "conceptGereedValue"
+      | "naam"
+      | "functie"
+      | "bodemklasse"
+      | "uitvoerderOnderhoud"
+      | "type"
+      | "bovenbreedte"
+      | "werkpadBreedte"
+      | "stakeholderInformatie"
+      | "conceptGereedValue"
     >
   ): Promise<JaarplanTrajectRecord> {
     const layer = await this.createTrajectLayer();
@@ -1371,6 +1422,16 @@ export class ArcgisJaarplanService {
               getField(layer, FIELD_NAMES.uitvoerderOnderhoud),
               values.uitvoerderOnderhoud
             ),
+            [FIELD_NAMES.type]: toFieldValue(getField(layer, FIELD_NAMES.type), values.type),
+            [FIELD_NAMES.bovenbreedte]: toFieldValue(
+              getField(layer, FIELD_NAMES.bovenbreedte),
+              values.bovenbreedte
+            ),
+            [FIELD_NAMES.werkpadBreedte]: toFieldValue(
+              getField(layer, FIELD_NAMES.werkpadBreedte),
+              values.werkpadBreedte
+            ),
+            [FIELD_NAMES.stakeholderInformatie]: values.stakeholderInformatie || null,
             [FIELD_NAMES.conceptGereed]: toFieldValue(
               getField(layer, FIELD_NAMES.conceptGereed),
               values.conceptGereedValue
@@ -1474,6 +1535,11 @@ export class ArcgisJaarplanService {
               values.steekproefStatus
             ),
             [FIELD_NAMES.steekproefOpmerking]: values.steekproefOpmerking || null,
+            [FIELD_NAMES.redenAfgekeurd]: toFieldValue(
+              getField(table, FIELD_NAMES.redenAfgekeurd),
+              values.redenAfgekeurd
+            ),
+            [FIELD_NAMES.datumSteekproef]: toArcgisDateValue(values.datumSteekproef),
             [FIELD_NAMES.statusMaatregel]: toFieldValue(
               getField(table, FIELD_NAMES.statusMaatregel),
               values.statusMaatregel

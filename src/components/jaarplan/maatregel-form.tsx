@@ -23,6 +23,7 @@ interface MaatregelFormProps {
   toelichtingText: string;
   submitLabel: string;
   saving?: boolean;
+  submitDisabled?: boolean;
   layout?: "full" | "compact";
   onFieldChange: (field: keyof JaarplanMeasureFormValues, value: string) => void;
   onSubmit: () => void;
@@ -134,6 +135,7 @@ export function MaatregelForm({
   toelichtingText,
   submitLabel,
   saving = false,
+  submitDisabled = false,
   layout = "full",
   onFieldChange,
   onSubmit,
@@ -483,7 +485,7 @@ export function MaatregelForm({
             </NativeSelect>
           </label>
 
-          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-8"} space-y-1.5`}>
+          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-12"} space-y-1.5`}>
             <span className="text-[11px] text-textDim">Opmerking</span>
             <Textarea
               rows={4}
@@ -522,7 +524,31 @@ export function MaatregelForm({
             </NativeSelect>
           </label>
 
-          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-8"} space-y-1.5`}>
+          <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-4"}`}>
+            <span className="text-[11px] text-textDim">Reden afgekeurd</span>
+            <NativeSelect
+              value={values.redenAfgekeurd}
+              onChange={(event) => onFieldChange("redenAfgekeurd", event.target.value)}
+            >
+              <option value="">—</option>
+              {metadata.redenAfgekeurdOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+
+          <label className={`space-y-1.5 ${compact ? "" : "xl:col-span-4"}`}>
+            <span className="text-[11px] text-textDim">Datum steekproef</span>
+            <Input
+              type="date"
+              value={values.datumSteekproef}
+              onChange={(event) => onFieldChange("datumSteekproef", event.target.value)}
+            />
+          </label>
+
+          <label className={`${compact ? "sm:col-span-2" : "xl:col-span-12"} space-y-1.5`}>
             <span className="text-[11px] text-textDim">Steekproef opmerkingen</span>
             <Textarea
               rows={3}
@@ -535,7 +561,12 @@ export function MaatregelForm({
       </CollapsibleSection>
 
       <div className="flex justify-end">
-        <Button type="button" onClick={onSubmit} disabled={saving} className="px-4 py-2">
+        <Button
+          type="button"
+          onClick={onSubmit}
+          disabled={saving || submitDisabled}
+          className="px-4 py-2"
+        >
           {saving ? "Opslaan..." : submitLabel}
         </Button>
       </div>

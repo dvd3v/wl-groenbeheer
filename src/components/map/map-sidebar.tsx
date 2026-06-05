@@ -1,4 +1,4 @@
-import { Layers3, Palette } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, Layers3, Palette } from "lucide-react";
 import { Accordion, AccordionSection } from "../ui/accordion";
 import type { LayerToggleItem, LegendItem, StatusOption } from "../../types/app";
 import { Button } from "../ui/button";
@@ -16,6 +16,7 @@ interface MapSidebarProps {
   selectedStatuses: number[];
   selectedBronlagen: string[];
   onlyNewGeometry: boolean;
+  collapsed: boolean;
   onToggleLayer: (id: string, visible: boolean) => void;
   onObjectCountMaxChange: (value: number) => void;
   onToggleTypeCodering: (value: string) => void;
@@ -23,6 +24,7 @@ interface MapSidebarProps {
   onToggleBronlaag: (value: string) => void;
   onToggleOnlyNewGeometry: () => void;
   onClearFilters: () => void;
+  onCollapsedChange: (collapsed: boolean) => void;
 }
 
 export function MapSidebar({
@@ -37,6 +39,7 @@ export function MapSidebar({
   selectedStatuses,
   selectedBronlagen,
   onlyNewGeometry,
+  collapsed,
   onToggleLayer,
   onObjectCountMaxChange,
   onToggleTypeCodering,
@@ -44,6 +47,7 @@ export function MapSidebar({
   onToggleBronlaag,
   onToggleOnlyNewGeometry,
   onClearFilters,
+  onCollapsedChange,
 }: MapSidebarProps) {
   const borLegendLayers = layers.filter(
     (layer) =>
@@ -61,8 +65,60 @@ export function MapSidebar({
     selectedBronlagen.length > 0 ||
     onlyNewGeometry;
 
+  if (collapsed) {
+    return (
+      <aside className="hidden h-full w-12 shrink-0 border-r border-border bg-white/85 backdrop-blur md:flex md:flex-col md:items-center md:gap-2 md:py-3">
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 w-9 px-0"
+          onClick={() => onCollapsedChange(false)}
+          aria-label="Open kaartzijbalk"
+          title="Open kaartzijbalk"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <div className="h-px w-7 bg-border" />
+        <div
+          className="relative flex h-9 w-9 items-center justify-center rounded-md bg-surfaceAlt text-textMuted"
+          title={`${totalTrajecten.toLocaleString("nl-NL")} trajecten zichtbaar`}
+        >
+          <Layers3 className="h-4 w-4" />
+        </div>
+        <div
+          className={`relative flex h-9 w-9 items-center justify-center rounded-md ${
+            hasActiveFilters
+              ? "bg-accentSoft text-accentStrong"
+              : "bg-surfaceAlt text-textMuted"
+          }`}
+          title={hasActiveFilters ? "Filters actief" : "Geen filters actief"}
+        >
+          <Filter className="h-4 w-4" />
+          {hasActiveFilters ? (
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
+          ) : null}
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="app-scrollbar hidden h-full w-[310px] overflow-y-auto border-r border-border bg-white/85 backdrop-blur md:block">
+    <aside className="app-scrollbar hidden h-full w-[310px] shrink-0 overflow-y-auto border-r border-border bg-white/85 backdrop-blur md:block">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-white/90 px-3 py-2 backdrop-blur">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-textMuted">
+          Kaartlagen & filters
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 w-8 px-0"
+          onClick={() => onCollapsedChange(true)}
+          aria-label="Klap kaartzijbalk in"
+          title="Klap kaartzijbalk in"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+      </div>
       <div className="p-3">
         <div className="mb-3">
           <MapProgressPanel countsByStatus={countsByStatus} total={totalTrajecten} />
