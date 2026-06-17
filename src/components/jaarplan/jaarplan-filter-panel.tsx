@@ -8,6 +8,11 @@ import { Switch } from "../ui/switch";
 
 export interface JaarplanFilterOptions {
   uitvoerderOnderhoud: Array<{ value: string; label: string }>;
+  functie: Array<{ value: string; label: string }>;
+  bodemklasse: Array<{ value: string; label: string }>;
+  type: Array<{ value: string; label: string }>;
+  bovenbreedte: Array<{ value: string; label: string }>;
+  werkpadBreedte: Array<{ value: string; label: string }>;
   regime: Array<{ value: string; label: string }>;
   werkzaamheid: Array<{ value: string; label: string }>;
   werkperiode: Array<{ value: string; label: string }>;
@@ -29,6 +34,30 @@ interface JaarplanFilterPanelProps {
   onReset: () => void;
 }
 
+interface SelectFilterProps {
+  label: string;
+  value: string;
+  emptyLabel: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}
+
+function SelectFilter({ label, value, emptyLabel, options, onChange }: SelectFilterProps) {
+  return (
+    <label className="space-y-1.5">
+      <span className="text-[11px] text-textDim">{label}</span>
+      <NativeSelect value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{emptyLabel}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </NativeSelect>
+    </label>
+  );
+}
+
 export function JaarplanFilterPanel({
   filters,
   options,
@@ -38,68 +67,7 @@ export function JaarplanFilterPanel({
   onReset,
 }: JaarplanFilterPanelProps) {
   const compact = mode === "compact";
-  const [expanded, setExpanded] = useState(mode === "full");
-  const quickFilters = (
-    <>
-      <label className="space-y-1.5">
-        <span className="text-[11px] text-textDim">Regime</span>
-        <NativeSelect
-          value={filters.regime}
-          onChange={(event) => onFilterChange("regime", event.target.value)}
-        >
-          <option value="">Alle regimes</option>
-          {options.regime.map((option) => (
-            <option key={option.value} value={option.label}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </label>
-
-      <label className="space-y-1.5">
-        <span className="text-[11px] text-textDim">Werkperiode</span>
-        <NativeSelect
-          value={filters.werkperiode}
-          onChange={(event) => onFilterChange("werkperiode", event.target.value)}
-        >
-          <option value="">Alle periodes</option>
-          {options.werkperiode.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </label>
-
-      <label className="space-y-1.5">
-        <span className="text-[11px] text-textDim">Status maatregel</span>
-        <NativeSelect
-          value={filters.statusMaatregel}
-          onChange={(event) => onFilterChange("statusMaatregel", event.target.value)}
-        >
-          <option value="">Alle statussen</option>
-          {options.statusMaatregel.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </label>
-
-      <label className="space-y-1.5">
-        <span className="text-[11px] text-textDim">Signalering</span>
-        <NativeSelect
-          value={filters.signal}
-          onChange={(event) => onFilterChange("signal", event.target.value)}
-        >
-          <option value="">Alles</option>
-          <option value="signaal">Alleen met signaal</option>
-          <option value="soortspecifiek">Soortspecifiek</option>
-          <option value="locatiebezoek">Locatiebezoek</option>
-        </NativeSelect>
-      </label>
-    </>
-  );
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <section className="glass-panel rounded-card border border-white/60 p-4">
@@ -120,7 +88,11 @@ export function JaarplanFilterPanel({
             {activeFilterCount ? `${activeFilterCount} filters actief` : "Geen filters actief"}
           </div>
           <Button variant="outline" onClick={() => setExpanded((current) => !current)}>
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {expanded ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
             {expanded ? "Filters inklappen" : "Filters uitklappen"}
           </Button>
           <Button variant="ghost" onClick={onReset} disabled={!activeFilterCount}>
@@ -130,31 +102,56 @@ export function JaarplanFilterPanel({
       </div>
 
       {expanded ? (
-        <>
-          <div
-            className={`mt-4 grid gap-3 ${
-              compact ? "md:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2 xl:grid-cols-4"
-            }`}
-          >
-            {quickFilters}
+        <div className="mt-4 space-y-4">
+          {!compact ? (
+            <div className="border-t border-white/60 pt-4">
+              <div className="mb-3">
+                <div className="text-[12px] font-semibold text-text">Trajectfilters</div>
+              </div>
 
-            {!compact ? (
-              <>
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Uitvoerder onderhoud</span>
-                  <NativeSelect
-                    value={filters.uitvoerderOnderhoud}
-                    onChange={(event) => onFilterChange("uitvoerderOnderhoud", event.target.value)}
-                  >
-                    <option value="">Alle uitvoerders</option>
-                    {options.uitvoerderOnderhoud.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <SelectFilter
+                  label="Uitvoerder onderhoud"
+                  value={filters.uitvoerderOnderhoud}
+                  emptyLabel="Alle uitvoerders"
+                  options={options.uitvoerderOnderhoud}
+                  onChange={(value) => onFilterChange("uitvoerderOnderhoud", value)}
+                />
+                <SelectFilter
+                  label="Functie"
+                  value={filters.functie}
+                  emptyLabel="Alle functies"
+                  options={options.functie}
+                  onChange={(value) => onFilterChange("functie", value)}
+                />
+                <SelectFilter
+                  label="Bodemklasse"
+                  value={filters.bodemklasse}
+                  emptyLabel="Alle bodemklassen"
+                  options={options.bodemklasse}
+                  onChange={(value) => onFilterChange("bodemklasse", value)}
+                />
+                <SelectFilter
+                  label="Type"
+                  value={filters.type}
+                  emptyLabel="Alle types"
+                  options={options.type}
+                  onChange={(value) => onFilterChange("type", value)}
+                />
+                <SelectFilter
+                  label="Bovenbreedte"
+                  value={filters.bovenbreedte}
+                  emptyLabel="Alle bovenbreedtes"
+                  options={options.bovenbreedte}
+                  onChange={(value) => onFilterChange("bovenbreedte", value)}
+                />
+                <SelectFilter
+                  label="Werkpad breedte"
+                  value={filters.werkpadBreedte}
+                  emptyLabel="Alle werkpadbreedtes"
+                  options={options.werkpadBreedte}
+                  onChange={(value) => onFilterChange("werkpadBreedte", value)}
+                />
                 <label className="space-y-1.5">
                   <span className="text-[11px] text-textDim">Trajectcode</span>
                   <Input
@@ -162,135 +159,148 @@ export function JaarplanFilterPanel({
                     onChange={(event) => onFilterChange("trajectCode", event.target.value)}
                   />
                 </label>
+              </div>
 
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Werkzaamheid</span>
-                  <NativeSelect
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                <label className="flex items-start gap-3 rounded-card border border-border bg-surfaceAlt px-4 py-3">
+                  <Switch
+                    checked={filters.hasMeasuresOnly}
+                    onCheckedChange={(checked) => onFilterChange("hasMeasuresOnly", checked)}
+                  />
+                  <div>
+                    <div className="text-[12px] font-medium text-text">
+                      Alleen trajecten met zichtbare maatregelen
+                    </div>
+                    <div className="text-[11px] text-textMuted">
+                      Beperk de lijst tot trajecten met maatregelen binnen de filters.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-card border border-border bg-surfaceAlt px-4 py-3">
+                  <Switch
+                    checked={filters.correctOnly}
+                    onCheckedChange={(checked) => onFilterChange("correctOnly", checked)}
+                  />
+                  <div>
+                    <div className="text-[12px] font-medium text-text">Alleen status Correct</div>
+                    <div className="text-[11px] text-textMuted">
+                      Toon alleen trajecten die in de trajectcontrole correct zijn.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-card border border-border bg-surfaceAlt px-4 py-3">
+                  <Switch
+                    checked={filters.conceptGereedOnly}
+                    onCheckedChange={(checked) => onFilterChange("conceptGereedOnly", checked)}
+                  />
+                  <div>
+                    <div className="text-[12px] font-medium text-text">Alleen concept gereed</div>
+                    <div className="text-[11px] text-textMuted">
+                      Toon trajecten waarvan de planning als concept gereed staat.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="border-t border-white/60 pt-4">
+            <div className="mb-3">
+              <div className="text-[12px] font-semibold text-text">Maatregelfilters</div>
+            </div>
+
+            <div
+              className={`grid gap-3 ${
+                compact ? "md:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2 xl:grid-cols-4"
+              }`}
+            >
+              <SelectFilter
+                label="Regime"
+                value={filters.regime}
+                emptyLabel="Alle regimes"
+                options={options.regime}
+                onChange={(value) => onFilterChange("regime", value)}
+              />
+              <SelectFilter
+                label="Werkperiode"
+                value={filters.werkperiode}
+                emptyLabel="Alle periodes"
+                options={options.werkperiode}
+                onChange={(value) => onFilterChange("werkperiode", value)}
+              />
+              <SelectFilter
+                label="Status maatregel"
+                value={filters.statusMaatregel}
+                emptyLabel="Alle statussen"
+                options={options.statusMaatregel}
+                onChange={(value) => onFilterChange("statusMaatregel", value)}
+              />
+              <label className="space-y-1.5">
+                <span className="text-[11px] text-textDim">Signalering</span>
+                <NativeSelect
+                  value={filters.signal}
+                  onChange={(event) => onFilterChange("signal", event.target.value)}
+                >
+                  <option value="">Alles</option>
+                  <option value="signaal">Alleen met signaal</option>
+                  <option value="soortspecifiek">Soortspecifiek</option>
+                  <option value="locatiebezoek">Locatiebezoek</option>
+                </NativeSelect>
+              </label>
+
+              {!compact ? (
+                <>
+                  <SelectFilter
+                    label="Werkzaamheid"
                     value={filters.werkzaamheid}
-                    onChange={(event) => onFilterChange("werkzaamheid", event.target.value)}
-                  >
-                    <option value="">Alle werkzaamheden</option>
-                    {options.werkzaamheid.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Zijde</span>
-                  <NativeSelect
+                    emptyLabel="Alle werkzaamheden"
+                    options={options.werkzaamheid}
+                    onChange={(value) => onFilterChange("werkzaamheid", value)}
+                  />
+                  <SelectFilter
+                    label="Zijde"
                     value={filters.zijde}
-                    onChange={(event) => onFilterChange("zijde", event.target.value)}
-                  >
-                    <option value="">Alle zijdes</option>
-                    {options.zijde.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Afvoeren</span>
-                  <NativeSelect
+                    emptyLabel="Alle zijdes"
+                    options={options.zijde}
+                    onChange={(value) => onFilterChange("zijde", value)}
+                  />
+                  <SelectFilter
+                    label="Afvoeren"
                     value={filters.afvoeren}
-                    onChange={(event) => onFilterChange("afvoeren", event.target.value)}
-                  >
-                    <option value="">Alle afvoeropties</option>
-                    {options.afvoeren.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Datum gepland</span>
-                  <Input
-                    type="date"
-                    value={filters.datumGepland}
-                    onChange={(event) => onFilterChange("datumGepland", event.target.value)}
+                    emptyLabel="Alle afvoeropties"
+                    options={options.afvoeren}
+                    onChange={(value) => onFilterChange("afvoeren", value)}
                   />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Datum uitgevoerd</span>
-                  <Input
-                    type="date"
-                    value={filters.datumUitgevoerd}
-                    onChange={(event) => onFilterChange("datumUitgevoerd", event.target.value)}
-                  />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-[11px] text-textDim">Status steekproef</span>
-                  <NativeSelect
+                  <label className="space-y-1.5">
+                    <span className="text-[11px] text-textDim">Datum gepland</span>
+                    <Input
+                      type="date"
+                      value={filters.datumGepland}
+                      onChange={(event) => onFilterChange("datumGepland", event.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[11px] text-textDim">Datum uitgevoerd</span>
+                    <Input
+                      type="date"
+                      value={filters.datumUitgevoerd}
+                      onChange={(event) => onFilterChange("datumUitgevoerd", event.target.value)}
+                    />
+                  </label>
+                  <SelectFilter
+                    label="Status steekproef"
                     value={filters.steekproefStatus}
-                    onChange={(event) => onFilterChange("steekproefStatus", event.target.value)}
-                  >
-                    <option value="">Alle statussen</option>
-                    {options.steekproefStatus.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-              </>
-            ) : null}
+                    emptyLabel="Alle statussen"
+                    options={options.steekproefStatus}
+                    onChange={(value) => onFilterChange("steekproefStatus", value)}
+                  />
+                </>
+              ) : null}
+            </div>
           </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
-              <Switch
-                checked={filters.hasMeasuresOnly}
-                onCheckedChange={(checked) => onFilterChange("hasMeasuresOnly", checked)}
-              />
-              <div>
-                <div className="text-[12px] font-medium text-text">
-                  Alleen trajecten met zichtbare maatregelen
-                </div>
-                <div className="text-[11px] text-textMuted">
-                  Beperk de lijst tot trajecten met maatregelen binnen de filters.
-                </div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
-              <Switch
-                checked={filters.correctOnly}
-                onCheckedChange={(checked) => onFilterChange("correctOnly", checked)}
-              />
-              <div>
-                <div className="text-[12px] font-medium text-text">
-                  Alleen status Correct
-                </div>
-                <div className="text-[11px] text-textMuted">
-                  Toon alleen trajecten die in de trajectcontrole correct zijn.
-                </div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 rounded-card border border-border bg-white px-4 py-3">
-              <Switch
-                checked={filters.conceptGereedOnly}
-                onCheckedChange={(checked) => onFilterChange("conceptGereedOnly", checked)}
-              />
-              <div>
-                <div className="text-[12px] font-medium text-text">
-                  Alleen concept gereed
-                </div>
-                <div className="text-[11px] text-textMuted">
-                  Toon trajecten waarvan de planning als concept gereed staat.
-                </div>
-              </div>
-            </label>
-          </div>
-        </>
+        </div>
       ) : null}
     </section>
   );

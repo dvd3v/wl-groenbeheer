@@ -42,7 +42,7 @@ const entityAccentClasses: Record<Tone, string> = {
 };
 
 const FEATURE_SERVICE_URL =
-  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/GC_Werk_Trajecten_2027_v02/FeatureServer";
+  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/GC_Werk_Trajecten_2027_v04/FeatureServer";
 
 const TABS: Array<{ id: DatamodelTabId; label: string; description: string }> = [
   {
@@ -366,7 +366,7 @@ function OverviewTab() {
             Relatie
           </div>
           <p className="mt-2 text-[12px] leading-6 text-textDim">
-            <code>GC_Werk_Rel_2027_v02</code> koppelt trajecten aan maatregelen:
+            <code>GC_Werk_Rel_2027_v04</code> koppelt trajecten aan maatregelen:
             <code> Traject.GlobalID</code> naar <code>Maatregel.traject_guid</code>.
           </p>
         </div>
@@ -585,7 +585,7 @@ function LayerTab({ id }: { id: "laag-a" | "laag-b" | "laag-c" }) {
                 Regimes, werkzaamheden en werkinstructies
               </div>
               <div className="mt-1 text-[12px] text-textDim">
-                Catalogus uit het v02 datamodel. De app synchroniseert werkzaamheid en
+                Catalogus uit het v04 datamodel. De app synchroniseert werkzaamheid en
                 werkinstructie automatisch wanneer een regime wordt gekozen.
               </div>
             </div>
@@ -687,8 +687,8 @@ export function DatamodelPage() {
             </h1>
             <p className="mt-3 max-w-3xl text-[13px] leading-6 text-textDim">
               De app werkt op de gepubliceerde ArcGIS FeatureServer voor{" "}
-              <code>GC_Werk_Trajecten_2027_v02</code> en de gekoppelde tabel{" "}
-              <code>GC_Werk_Maatregelen_2027_v02</code>. Het onderliggende
+              <code>GC_Werk_Trajecten_2027_v04</code> en de gekoppelde tabel{" "}
+              <code>GC_Werk_Maatregelen_2027_v04</code>. Het onderliggende
               documentatiemodel volgt de A/B/C-lagen voor techniek, identificatie en beheer.
             </p>
             <a

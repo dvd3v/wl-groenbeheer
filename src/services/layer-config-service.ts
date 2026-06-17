@@ -1,5 +1,5 @@
 export const DEFAULT_GC_WERK_FEATURE_SERVICE_URL =
-  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/GC_Werk_Trajecten_2027_v03/FeatureServer";
+  "https://services.arcgis.com/pCDwdQn0AhSP66VA/arcgis/rest/services/GC_Werk_Trajecten_2027_v04/FeatureServer";
 
 const STORAGE_KEY = "wl-groenbeheer.layer-config.v1";
 

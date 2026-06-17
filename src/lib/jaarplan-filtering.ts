@@ -134,6 +134,11 @@ export function getFilteredJaarplanGroups(
   const trajectoryFiltersActive = Boolean(
     filters.trajectCode ||
       filters.uitvoerderOnderhoud ||
+      filters.functie ||
+      filters.bodemklasse ||
+      filters.type ||
+      filters.bovenbreedte ||
+      filters.werkpadBreedte ||
       filters.hasMeasuresOnly ||
       filters.correctOnly ||
       filters.conceptGereedOnly
@@ -151,6 +156,26 @@ export function getFilteredJaarplanGroups(
         filters.uitvoerderOnderhoud &&
         traject.uitvoerderOnderhoud !== filters.uitvoerderOnderhoud
       ) {
+        return null;
+      }
+
+      if (filters.functie && traject.functie !== filters.functie) {
+        return null;
+      }
+
+      if (filters.bodemklasse && traject.bodemklasse !== filters.bodemklasse) {
+        return null;
+      }
+
+      if (filters.type && traject.type !== filters.type) {
+        return null;
+      }
+
+      if (filters.bovenbreedte && traject.bovenbreedte !== filters.bovenbreedte) {
+        return null;
+      }
+
+      if (filters.werkpadBreedte && traject.werkpadBreedte !== filters.werkpadBreedte) {
         return null;
       }
 

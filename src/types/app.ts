@@ -182,6 +182,11 @@ export interface SharedJaarplanFilters {
   search: string;
   trajectCode: string;
   uitvoerderOnderhoud: string;
+  functie: string;
+  bodemklasse: string;
+  type: string;
+  bovenbreedte: string;
+  werkpadBreedte: string;
   regime: string;
   werkzaamheid: string;
   werkperiode: string;

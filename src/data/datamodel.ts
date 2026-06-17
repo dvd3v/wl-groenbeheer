@@ -274,7 +274,7 @@ export const PLANNING_STATUS_COLORS: Record<PlanningRegistrationStatus, string> 
 export const DATAMODEL_SECTIONS: DatamodelSection[] = [
   {
     id: "spatial",
-    title: "GC_Werk_Trajecten_2027_v02",
+    title: "GC_Werk_Trajecten_2027_v04",
     subtitle:
       "Live ArcGIS trajectenlaag met GlobalID als relationele sleutel naar de maatregelentabel.",
     tone: "accent",
@@ -290,7 +290,7 @@ export const DATAMODEL_SECTIONS: DatamodelSection[] = [
         name: "GlobalID",
         label: "Relationele sleutel",
         type: "GUID",
-        description: "Primaire sleutel in de relatie met GC_Werk_Maatregelen_2027_v02.traject_guid.",
+        description: "Primaire sleutel in de relatie met GC_Werk_Maatregelen_2027_v04.traject_guid.",
         status: "Live",
       },
       {
@@ -419,7 +419,7 @@ export const DATAMODEL_SECTIONS: DatamodelSection[] = [
   },
   {
     id: "planning",
-    title: "GC_Werk_Maatregelen_2027_v02",
+    title: "GC_Werk_Maatregelen_2027_v04",
     subtitle:
       "Gerelateerde ArcGIS tabel voor WL-planning, aannemerregistratie en inspectievelden.",
     tone: "violet",
@@ -435,7 +435,7 @@ export const DATAMODEL_SECTIONS: DatamodelSection[] = [
         name: "traject_guid",
         label: "Traject linkage",
         type: "GUID",
-        description: "Foreign key naar GC_Werk_Trajecten_2027_v02.GlobalID.",
+        description: "Foreign key naar GC_Werk_Trajecten_2027_v04.GlobalID.",
         status: "Live",
       },
       {

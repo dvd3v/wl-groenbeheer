@@ -76,6 +76,18 @@ function toSelectOptions(values: string[]) {
     .map((value) => ({ value, label: value }));
 }
 
+function toFilterOptions(
+  domainOptions: Array<{ value: string; label: string }> | undefined,
+  fallbackValues: string[]
+) {
+  const options =
+    domainOptions
+      ?.filter((option) => option.value)
+      .map((option) => ({ value: option.value, label: option.label })) ?? [];
+
+  return options.length ? options : toSelectOptions(fallbackValues);
+}
+
 function toTrajectDetailsDraft(traject: JaarplanTrajectRecord): TrajectDetailsDraft {
   return {
     naam: traject.naam,
@@ -145,9 +157,29 @@ export function JaarplanPage() {
           value: option.value,
           label: option.label,
         })) ?? [],
+      functie: toFilterOptions(
+        metadata?.trajectFieldOptions.functie,
+        trajecten.map((traject) => traject.functie)
+      ),
+      bodemklasse: toFilterOptions(
+        metadata?.trajectFieldOptions.bodemklasse,
+        trajecten.map((traject) => traject.bodemklasse)
+      ),
+      type: toFilterOptions(
+        metadata?.trajectFieldOptions.type,
+        trajecten.map((traject) => traject.type)
+      ),
+      bovenbreedte: toFilterOptions(
+        metadata?.trajectFieldOptions.bovenbreedte,
+        trajecten.map((traject) => traject.bovenbreedte)
+      ),
+      werkpadBreedte: toFilterOptions(
+        metadata?.trajectFieldOptions.werkpadBreedte,
+        trajecten.map((traject) => traject.werkpadBreedte)
+      ),
       regime:
         metadata?.regimeOptions.map((option) => ({
-          value: option.value,
+          value: option.label,
           label: option.label,
         })) ?? [],
       werkzaamheid: toSelectOptions(measures.map((measure) => measure.werkzaamheidLabel)),
@@ -177,7 +209,7 @@ export function JaarplanPage() {
           label: option.label,
         })) ?? [],
     };
-  }, [measures, metadata]);
+  }, [measures, metadata, trajecten]);
 
   const groupedRows = useMemo(
     () => getFilteredJaarplanGroups(trajecten, measures, sharedFilters),
